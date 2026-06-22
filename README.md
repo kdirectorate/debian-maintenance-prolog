@@ -1,2 +1,0 @@
-# debian-maintenance-prolog
-
