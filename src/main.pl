@@ -7,98 +7,46 @@
 % In Lesson 5 we will convert everything to proper modules
 % with use_module/1 for better encapsulation.
 
-:- consult('facts.pl').
-:- consult('kernel_cleaner.pl').
-:- use_module('process_utils').
-:- use_module('temp_cleanup').
-:- use_module('facts').
-:- use_module('ssh_bridge').
+:- use_module('config/default_policy').
+:- use_module('src/kernel_cleaner').
+:- use_module('src/temp_cleanup').
+:- use_module('src/log_manager.pl').
+:- use_module('src/apt_maintainer.pl').
+:- use_module('src/security_scanner.pl').
 
 % Optional banner so you know the files loaded cleanly
 show_banner :-
     format('~n=== Debian System Maintenance Tool ===~n').
 
-run_demos :-
+/* Teaching note:
+   main.pl should stay small. Its job is:
+   1. Parse CLI (later)
+   2. Call the SSH bridge to collect data
+   3. Ask each specialist module for decisions
+   4. Produce the report (Lesson 7)
+*/
+
+
+run_lesson5_demo :-
     show_banner,
-    demo_lesson1,
-    demo_lesson2,
-    demo_lesson3.
 
-% ============================================================
-% demo_lesson1 - Convenience helper for Lesson 1 testing
-% ============================================================
-demo_lesson1 :-
-    format('~n=== Lesson 1 Demo: Kernel Removal Policy ===~n~n'),
+    % Example data that would normally come from the SSH bridge
+    Running = '6.1.0-17-amd64',
+    Installed = ['6.1.0-17-amd64', '6.1.0-16-amd64', '5.10.0-8-amd64', '5.10.0-7-amd64'],
+    TempFiles = [temp_file('/tmp/old.log', 50*1024*1024, 10*86400),
+                 temp_file('/tmp/recent.tmp', 100*1024, 3600)],
+                 
+    safe_to_remove_kernels(Running, Installed, SafeKernels),
+    SafeKernelsTest = ['6.1.0-16-amd64', '5.10.0-8-amd64', '5.10.0-7-amd64'],
+    % Test the value of SafeKernels against the expected value
+    SafeKernels = SafeKernelsTest,  
+    format('Kernels safe to remove: ~w~n', [SafeKernels]),
+    
+    % Temp file example (mock data)
 
-    running_kernel(Running),
-    format('Currently running kernel: ~w~n~n', [Running]),
-
-    findall(K, removable_kernel(K), Removable),
-    length(Removable, Count),
-
-    format('Kernels safe to remove: ~w~n', [Count]),
-    (   Removable = []
-    ->  format('No other kernels can be removed.~n')
-    ;   format('The following kernels are safe to remove:~n'),
-        maplist(print_kernel, Removable)
-    ),
-
-    format('~n(End of Lesson 1 demo)~n').
-
-print_kernel(K) :-
-    format('  ~w~n', [K]).
-
-% ============================================================
-% demo_lesson2 - Convenience helper for Lesson 2 testing
-% ============================================================
-demo_lesson2 :-
-    format('~n=== Lesson 2 Demo: Temporary File Cleanup ===~n~n'),
-
-    collect_temp_files(AllFiles),
-    files_to_delete(AllFiles, ToDelete),
-    reclaimed_space(ToDelete, Bytes),
-
-    length(ToDelete, Count),
-    MiB is Bytes / 1048576,
-
-    format('Total temp files found:     ~w~n', [length(AllFiles)]),
-    format('Files marked for deletion:  ~w~n', [Count]),
-    format('Space that would be freed:  ~w bytes (~2f MiB)~n~n',
-           [Bytes, MiB]),
-
-    (   ToDelete = []
-    ->  format('No files meet the current deletion policy.~n')
-    ;   format('Files to be deleted:~n'),
-        maplist(print_temp_file, ToDelete)
-    ),
-
-    format('~n(End of Lesson 2 demo)~n').
-
-print_temp_file(temp_file(Path, Size, Age)) :-
-    Hours is Age / 3600,
-    format('  DELETE  ~w~n', [Path]),
-    format('          Size: ~w bytes   Age: ~2f hours~n~n', [Size, Hours]).
-
-
-% ============================================================
-% demo_lesson3 - Convenience helper for Lesson 2 testing
-% ============================================================
-safe_get_running_kernel(K) :-
-    catch(get_running_kernel(K), Error,
-    (format("Caught error: ~w~n", [Error]), fail)).
-
-demo_lesson3 :-
-    format('~n=== Testing external process calls ===~n~n'),
-    (   safe_get_running_kernel(K)
-    ->  format('Running kernel: ~w~n', [K])
-    ;   writeln('Failed to get kernel')
-    ).
-
-% ============================================================
-% demo_lesson4 - SSH Bridge
-% ============================================================
-demo_lesson4 :-
-    format('~n=== Lesson 4 Demo: SSH + JSON Bridge ===~n~n'),
-    format('Syncing remote kernels from user@host...~n'),
-    collect_remote_kernels('remote_host', 'remote_user', kernels(Running, Installed)).
-
+    max_log_size_mb(F), max_temp_age_days(S), 
+    files_to_delete(F, S, TempFiles, ToDelete),
+    
+    format('Temp files to delete: ~w~n', [ToDelete]),
+    
+    writeln('Orchestration successful. All modules loaded and cooperating.').

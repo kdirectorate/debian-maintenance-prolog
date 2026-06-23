@@ -1,55 +1,46 @@
-% ============================================================
-% temp_cleanup.pl - Lesson 2: Recursion, Lists, and Collections
-% ============================================================
+:- module(temp_cleanup, [
+    file_should_be_deleted/3,    % AgeDays, SizeMB, FileTerm
+    files_to_delete/4,
+    reclaimed_space/2
+]).
 
-:- module(temp_cleanup,
-    [ collect_temp_files/1,
-      files_to_delete/2,
-      reclaimed_space/2,
-      should_delete_temp/1,
-      temp_cleanup_plan/2
-    ]).
+/* Teaching note:
+   Lesson 2 introduced head/tail recursion. We keep a recursive helper
+   but also demonstrate findall + a filter predicate — both are valid
+   and idiomatic. The filter predicate (file_should_be_deleted/3) is
+   the declarative "policy rule".
+*/
 
-% ------------------------------------------------------------
-% collect_temp_files/1  —  Using findall/3
-% ------------------------------------------------------------
-collect_temp_files(Files) :-
-    findall(temp_file(Path, Size, Age),
-            temp_file(Path, Size, Age),
-            Files).
+%% ============================================================
+%% file_should_be_deleted(+MaxAgeDays, +MaxSizeMB, +FileTerm)
+%% ============================================================
+% Declarative policy rule: a file should be deleted if it is older than
+% MaxAgeDays or larger than MaxSizeMB. FileTerm is a temp_file(Path,
+file_should_be_deleted(MaxAgeDays, MaxSizeMB, temp_file(Path, SizeBytes, AgeSeconds)) :-
+    AgeDays is AgeSeconds / 86400,
+    SizeMB is SizeBytes / (1024*1024),
+    (   AgeDays > MaxAgeDays
+    ;   SizeMB > MaxSizeMB
+    ).
 
-% ------------------------------------------------------------
-% The Policy Rule (declarative and easy to change)
-% ------------------------------------------------------------
-should_delete_temp(temp_file(_Path, Size, Age)) :-
-    Age > 86400,          % older than 24 hours
-    Size > 1048576.       % larger than 1 MiB
+%% ============================================================
+%% files_to_delete(+MaxAgeDays, +MaxSizeMB, +FileList, -ToDelete)
+%% ============================================================
+% Collect all files that meet the deletion policy using findall/3
+files_to_delete(MaxAgeDays, MaxSizeMB, FileList, ToDelete) :-
+    findall(
+        F, 
+        (member(F, FileList), file_should_be_deleted(MaxAgeDays, MaxSizeMB, F)), 
+        ToDelete
+    ).
 
-% ------------------------------------------------------------
-% files_to_delete/2  —  Classic head/tail recursion
-% ------------------------------------------------------------
-files_to_delete([], []).
-
-files_to_delete([File | Rest], [File | ToDeleteRest]) :-
-    should_delete_temp(File),
-    files_to_delete(Rest, ToDeleteRest).
-
-files_to_delete([_Skip | Rest], ToDelete) :-
-    files_to_delete(Rest, ToDelete).
-
-% ------------------------------------------------------------
-% reclaimed_space/2  —  Another recursion (summing)
-% ------------------------------------------------------------
+%% ============================================================
+%% reclaimed_space(+FileList, -TotalBytes)
+%% ============================================================
+% Sum the sizes of all files in FileList to compute the total space
+% that would be reclaimed if they were deleted. This is a classic
+% head/tail recursion pattern.
 reclaimed_space([], 0).
-
-reclaimed_space([temp_file(_, Size, _) | Rest], TotalBytes) :-
-    reclaimed_space(Rest, RestBytes),
-    TotalBytes is Size + RestBytes.
-
-% ------------------------------------------------------------
-% Convenience predicate
-% ------------------------------------------------------------
-temp_cleanup_plan(FilesToDelete, BytesReclaimed) :-
-    collect_temp_files(All),
-    files_to_delete(All, FilesToDelete),
-    reclaimed_space(FilesToDelete, BytesReclaimed).
+reclaimed_space([temp_file(_, Size, _)|Rest], Total) :-
+    reclaimed_space(Rest, RestTotal),
+    Total is Size + RestTotal.
