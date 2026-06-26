@@ -57,6 +57,37 @@ def _package_results(status: str, message: str, action: str, data: dict) -> dict
 # user passes on the command line.
 # ---------------------------------------------------------------------------
 
+def do_collect_temp_files(args: argparse.Namespace) -> int:
+    """Get a list of temporary files from the remote host."""
+    
+    try:
+        CMD = "sudo find /tmp -type f -printf '%p %s %T@\n'"
+        action = _current_action()
+        user = args.user or "root"
+        connect_kwargs = {"allow_agent": True, "look_for_keys": True}
+        if args.key is not None:
+            connect_kwargs["key_filename"] = str(args.key)
+
+        result = Connection(
+            host=args.host,
+            port=args.port,
+            user=user,
+            connect_kwargs=connect_kwargs,
+        ).run(CMD, hide=True)
+
+        # Parse the running kernel name and the list of installed kernels from the command output.
+        temp_files = []
+        line = None
+        for line in result.stdout.splitlines():
+            if line.startswith("/tmp/"):
+                path, sizebytes, age = line.split(" ", 2)
+                temp_files.append((path, int(sizebytes), float(age)))
+        package = _package_results("success", "Temporary files collected successfully", action, {"temp_files": temp_files})
+    except Exception as e:
+        package = _package_results("error", f"Failed to collect temporary files : {e}", action, {})
+
+    return package
+        
 def do_collect_kernels(args: argparse.Namespace) -> int:
     """Get kernel information from the remote host."""
     
@@ -68,14 +99,17 @@ def do_collect_kernels(args: argparse.Namespace) -> int:
         if args.key is not None:
             connect_kwargs["key_filename"] = str(args.key)
 
+        notes = f"[DEBUG] Running command on remote {args.host}:{args.port}]: {CMD}"
         result = Connection(
             host=args.host,
+            port=args.port,
             user=user,
             connect_kwargs=connect_kwargs,
         ).run(CMD, hide=True)
 
         # Parse the running kernel name and the list of installed kernels from the command output.
         data = {
+            "notes": notes,
             "running_kernel": result.stdout.splitlines()[0],
             "installed_kernels": [line for line in result.stdout.splitlines()[2:] if line.startswith("linux-image-")],
         }
@@ -108,6 +142,8 @@ def _build_parser(action_names: list[str]) -> argparse.ArgumentParser:
         description="Run a maintenance action against a remote Debian host over SSH.",
     )
     parser.add_argument("--host", required=True, help="Hostname or IP of the target system.")
+    parser.add_argument("--port", required=False, type=int, 
+                        help="SSH port of the target system.", default=22)
     parser.add_argument("--user", required=False, help="SSH username.")
     parser.add_argument(
         "--key",

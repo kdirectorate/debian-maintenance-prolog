@@ -9,8 +9,7 @@
 %   - Clean error propagation (Python error JSON → Prolog failure + message)
 
 :- module(ssh_bridge, [
-    collect_remote_kernels/3,
-    sync_remote_kernels/2,
+    sync_remote_kernels/3,
     actually_remove_kernels/1,
     actually_remove_temp_files/1,
     actually_remove_log_files/1,
@@ -44,8 +43,8 @@ actually_remove_kernels(_Kernels) :-
 % High-level convenience predicate.
 % After it succeeds, your removable_kernel/1 rule (Lesson 1) will
 % reason over the real kernels on the remote machine.
-sync_remote_kernels(Host, User) :-
-    collect_remote_kernels(Host, User, kernels(Running, Installed)),
+sync_remote_kernels(Host, Port, User) :-
+    collect_remote_kernels(Host, Port, User, kernels(Running, Installed)),
     retractall(running_kernel(_)),
     retractall(installed_kernel(_)),
     assertz(running_kernel(Running)),
@@ -56,11 +55,11 @@ sync_remote_kernels(Host, User) :-
 
 assertz_installed(K) :- assertz(installed_kernel(K)).
 
-%% collect_remote_kernels(+Host, +User, -Kernels) is det.
+%% collect_remote_kernels(+Host, +Port, +User, -Kernels) is det.
 % Calls the Python helper and returns kernels(Running, Installed) on success
 % or fails with a meaningful message on error.
-collect_remote_kernels(Host, User, kernels(Running, Installed)) :-
-    py_remote_executor(Host, User, "collect_kernels", Response),
+collect_remote_kernels(Host, Port, User, kernels(Running, Installed)) :-
+    py_remote_executor(Host, Port, User, "collect_kernels", Response),
     ( Response.status = "success" ->
         Running = Response.data.running_kernel,
         Installed = Response.data.installed_kernels
@@ -68,20 +67,49 @@ collect_remote_kernels(Host, User, kernels(Running, Installed)) :-
       fail
     ).
 
-%% py_remote_executor(+Host, +User, +Action, -Response) is det.
+%% sync_remote_temp_files(+Host, +User, -TempFiles) is det.
+% Calls the Python helper and returns a list of temp_file(Path, SizeBytes, AgeDays) on success
+% or fails with a meaningful message on error.
+sync_remote_temp_files(Host, Port, User) :-
+    collect_remote_temp_files(Host, Port, User, TempFiles),
+    retractall(temp_file(_, _, _)),
+    maplist(assertz_temp_file, TempFiles),
+    length(TempFiles, Count),
+    format('~n[INFO] Loaded ~w temp files from remote.~n~n', [Count]).
+
+assertz_temp_file(temp_file(Path, SizeBytes, AgeDays)) :-
+    assertz(temp_file(Path, SizeBytes, AgeDays)).
+
+collect_remote_temp_files(Host, Port, User, TempFiles) :-
+    py_remote_executor(Host, Port, User, "collect_temp_files", Response),
+    ( Response.status = "success" ->
+        TempFiles = Response.data.temp_files
+    ; format("[ERR] Failed to collect temp files from remote: ~w~n", [Response.message]),
+      fail
+    ).
+
+%% py_remote_executor(+Host, +Port, +User, +Action, -Response) is det.
 % Calls the Python helper with the given action and returns a Prolog dict
 % representing the JSON response. Fails with a message if the Python helper fails.
-py_remote_executor(Host, User, Action, Response) :-
+py_remote_executor(Host, Port, User, Action, Response) :-
     process_utils:call_python(
-        ['python/remote_executor.py', '--host', Host, '--user', User, '--action', Action],
+        ['python/remote_executor.py', '--host', Host, '--port', Port, '--user', User, '--action', Action],
         Output,
         Status
     ),
-    ( Status = exit(0)
-    -> parse_remote_response(Output, Response),
-       check_remote_success(Response)
-    ; format('[ERR] Python helper failed with status: ~w~n', [Status]),
-      fail
+    (   parse_remote_response(Output, Response)
+    ->  (   Status = exit(0)
+        ->  check_remote_success(Response)
+        ;   format('[ERR] 1 Python helper failed with status: ~w~n', [Status]),
+            catch(format('~w~n', [Response.message]), _, true),
+            fail
+        )
+    ;   format('[ERR] Failed to parse response~n', []),
+        (   Status = exit(0) -> true
+        ;   format('[ERR] 2 Python helper failed with status: ~w~n', [Status]),
+            catch(format('~w~n', [Output]), _, true)
+        ),
+        fail
     ).
 
 %% parse_remote_response(+Output, -Response) is det.
@@ -89,8 +117,8 @@ py_remote_executor(Host, User, Action, Response) :-
 parse_remote_response(Output, Response) :-
     catch(
         atom_json_dict(Output, Response, []),
-        _E,
-        ( format('[ERR] Failed to parse JSON from Python helper: ~w~n', [Output]),
+        E,
+        ( format('[ERR] Failed to parse JSON from Python helper: ~w~n ~w~n', [E, Output]),
           fail
         )
     ).

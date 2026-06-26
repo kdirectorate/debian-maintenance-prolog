@@ -5,12 +5,20 @@
     max_log_size_mb/1,
     brute_force_threshold/1,
     keep_last_n_kernels/1,
-    standard_root_user/1
+    standard_root_user/1,
+    default_target_host/1,
+    default_target_port/1,
+    default_target_user/1
 ]).
 
 % ============================================================
 % POLICY FACTS 
 % ============================================================
+
+default_target_host('localhost').
+default_target_port(22).  % default SSH port
+default_target_user('root').
+    
 
 max_temp_age_days(5).
 max_temp_size_mb(10).
@@ -36,3 +44,4 @@ critical_file('/etc/ssh/ssh_config').
 % Standard root-equivalent users (add any you deliberately created)
 standard_root_user(root).
 standard_root_user(toor).
+

@@ -7,6 +7,12 @@
 % In Lesson 5 we will convert everything to proper modules
 % with use_module/1 for better encapsulation.
 
+% library(prolog_stack) installs the hook that attaches the call stack to
+% exceptions so catch_with_backtrace/3 has frames to show.
+:- use_module(library(prolog_stack)).
+
+:- use_module(library(main)).
+
 % test facts
 :- use_module('src/facts').
 
@@ -18,10 +24,6 @@
 :- use_module('src/apt_maintainer').
 :- use_module('src/security_scanner').
 :- use_module('src/report_generator').
-
-% library(prolog_stack) installs the hook that attaches the call stack to
-% exceptions so catch_with_backtrace/3 has frames to show.
-:- use_module(library(prolog_stack)).
 
 /* Teaching note (debugging helper):
    debug_run(:Goal) runs Goal and, if it throws, prints a full user-level
@@ -66,14 +68,49 @@ confirm_action(Description) :-
     ;   format('Action aborted by user.~n'), fail
     ).
 
-main :-
-    show_banner,
+parse_options([], Opts, Opts).
+parse_options(['-h' | T], Acc, Opts) :-
+    parse_options(T, [display_help(true) | Acc], Opts).
+parse_options(['--dry-run' | T], Acc, Opts) :-
+    parse_options(T, [dry_run(true) | Acc], Opts).
+parse_options(['--host', Host | T], Acc, Opts) :-
+    parse_options(T, [target_host(Host) | Acc], Opts).
+parse_options(['--port', Port | T], Acc, Opts) :-
+    parse_options(T, [target_port(Port) | Acc], Opts).
+parse_options(['--user', User | T], Acc, Opts) :-
+    parse_options(T, [target_user(User) | Acc], Opts).
+parse_options([Unknown | T], Acc, Opts) :-
+    format('Warning: unknown argument ~w~n', [Unknown]),
+    parse_options(T, Acc, Opts).
 
-    % Gather system state from facts.pl (or later, from SSH)
+main(Argv) :-
+    show_banner,
+    parse_options(Argv, [], OptionsRev),
+    reverse(OptionsRev, Options),
+
+    (   member(display_help(true), Options),
+        format('Usage: swipl -s main.pl [options]~n'),
+        format('Options:~n'),
+        format('  --dry-run          : Show what would be done without making changes~n'),
+        format('  --host <hostname>  : Specify the target host (default: debian12-maint-test)~n'),
+        format('  --port <port>      : Specify the SSH port (default: 22)~n'),
+        format('  --user <username>  : Specify the SSH user (default: shinhwa)~n'),
+        format('  -h                 : Display this help message~n'),
+        halt(0)
+    ;   true
+    ),
+
+    ( member(target_host(Host), Options) ; default_target_host(Host) ),
+    ( member(target_port(Port), Options) ; default_target_port(Port) ),
+    ( member(target_user(User), Options) ; default_target_user(User) ),
+
+    sync_remote_kernels(Host, Port, User),
+    
+    % Gather system state from fa cts.pl (or later, from SSH)
     running_kernel(Running),
     findall(K, installed_kernel(K), Installed),
     findall(K, removable_kernel(Running, Installed, K), SafeKernels),
-    findall(temp_file(P, S, A),
+    findall(P,
         (   temp_file(P, S, A),
             file_should_be_deleted( temp_file(P, S, A))
         ),
@@ -85,7 +122,7 @@ main :-
         ),
         LogFiles
     ),*/
-    findall(autoremove_candidate(P), autoremove_candidate(P), AutoremoveCandidates),
+    findall(P, autoremove_candidate(P), AutoremoveCandidates),
     collect_findings(Findings),
     generate_maintenance_report('localhost', SafeKernels, TempFiles, Findings, AutoremoveCandidates, dry_run).
 
