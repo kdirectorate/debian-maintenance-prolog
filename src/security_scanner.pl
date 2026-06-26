@@ -5,48 +5,20 @@
 */
 
 :- module(security_scanner, [
-    run_security_scan/1,      % +Findings:list
-    security_finding/4,       % finding(What, Severity, Evidence, Recommendation)
-    explain_finding/1
+    explain_finding/1,
+    collect_findings/1        % +Findings:list
 ]).
 
 :- use_module(library(lists)).
-:- use_module('../config/default_policy').   % thresholds & whitelists live here
-
-% ============================================================
-% POLICY FACTS (move more complex ones to default_policy.pl later)
-% ============================================================
-
-% Expected listening ports (extend as you add services)
-expected_listening_port(22, tcp).     % SSH
-expected_listening_port(80, tcp).
-expected_listening_port(443, tcp).
-expected_listening_port(53, udp).     % DNS if you run it
-expected_listening_port(9000, tcp).     
-
-critical_file('/etc/passwd').
-critical_file('/etc/shadow').
-critical_file('/etc/sudoers').
-critical_file('/bin/login').
-critical_file('/usr/sbin/sshd').
-critical_file('/etc/ssh/sshd_config').
-critical_file('/etc/ssh/ssh_config').
-
-% Brute-force threshold (number of failed logins from one IP)
-brute_force_threshold(3).
-
-% Standard root-equivalent users (add any you deliberately created)
-standard_root_user(root).
-standard_root_user(toor).
+:- use_module('config/default_policy').   % thresholds & whitelists live here
+% TODO: later we will use the SSH bridge to collect facts from the remote host
+:- use_module('src/facts').  % for listening_port/2, failed_login/3, modified_file/2, process/4, user_account/3
 
 % ============================================================
 % MAIN ENTRY POINT
 % ============================================================
 
-%% run_security_scan(-Findings) is det.
-%  Collects findings from all five checks.
-%  This is the predicate you will call from main.pl or the report generator.
-run_security_scan(Findings) :-
+collect_findings(Findings) :-
     collect_port_findings(PortFindings),
     collect_brute_force_findings(BruteFindings),
     collect_file_mod_findings(FileFindings),
@@ -55,6 +27,7 @@ run_security_scan(Findings) :-
     append([PortFindings, BruteFindings, FileFindings, ProcFindings, UID0Findings],
            Unsorted),
     sort(Unsorted, Findings).   % remove any accidental duplicates
+
 
 % Helper collectors — each uses findall so we get zero or more findings per category
 collect_port_findings(Findings) :-

@@ -1,8 +1,11 @@
 :- module(temp_cleanup, [
-    file_should_be_deleted/3,    % AgeDays, SizeMB, FileTerm
+    file_should_be_deleted/1,    % AgeDays, SizeMB, FileTerm
     files_to_delete/4,
     reclaimed_space/2
 ]).
+
+:- use_module(library(lists)).
+:- use_module('config/default_policy').   % thresholds & whitelists live here
 
 /* Teaching note:
    Lesson 2 introduced head/tail recursion. We keep a recursive helper
@@ -16,9 +19,11 @@
 %% ============================================================
 % Declarative policy rule: a file should be deleted if it is older than
 % MaxAgeDays or larger than MaxSizeMB. FileTerm is a temp_file(Path,
-file_should_be_deleted(MaxAgeDays, MaxSizeMB, temp_file(Path, SizeBytes, AgeSeconds)) :-
+file_should_be_deleted(temp_file(_Path, SizeBytes, AgeSeconds)) :-
     AgeDays is AgeSeconds / 86400,
     SizeMB is SizeBytes / (1024*1024),
+    max_temp_age_days(MaxAgeDays),
+    max_temp_size_mb(MaxSizeMB),
     (   AgeDays > MaxAgeDays
     ;   SizeMB > MaxSizeMB
     ).

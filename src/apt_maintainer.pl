@@ -1,6 +1,5 @@
 :- module(apt_maintainer, [
-    pending_autoremove/2,
-    would_free_space/2
+    pending_autoremove/2
 ]).
 
 /* Teaching note:

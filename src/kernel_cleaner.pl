@@ -1,6 +1,5 @@
 :- module(kernel_cleaner, [
     removable_kernel/3,          % Running, InstalledList, Kernel
-    safe_to_remove_kernels/3,    % Running, InstalledList, SafeList
     keep_at_least_previous/4     % optional policy hook for later
 ]).
 
@@ -23,15 +22,6 @@
 removable_kernel(Running, Installed, K) :-
     member(K, Installed),
     K \= Running.                    % negation as failure – safety guarantee
-
-%% ============================================================
-%% safe_to_remove_kernels(+Running, +Installed, -SafeList)
-%% ============================================================
-% Collect all safe-to-remove kernels using findall/3
-% findall is like a declarative list comprehension: "collect every K
-% for which removable_kernel/3 succeeds"
-safe_to_remove_kernels(Running, Installed, SafeList) :-
-    findall(K, removable_kernel(Running, Installed, K), SafeList).
 
 %% ============================================================
 %% keep_at_least_previous(+Running, +Installed, +N, -ToRemove)

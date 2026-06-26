@@ -10,7 +10,11 @@
 
 :- module(ssh_bridge, [
     collect_remote_kernels/3,
-    sync_remote_kernels/2
+    sync_remote_kernels/2,
+    actually_remove_kernels/1,
+    actually_remove_temp_files/1,
+    actually_remove_log_files/1,
+    actually_remove_apt_packages/0
     ]).
 
 :- use_module(library(process)).
@@ -24,6 +28,18 @@
 :- dynamic running_kernel/1.
 :- dynamic installed_kernel/1.
 
+actually_remove_apt_packages() :-
+    true. % TODO: implement the actual removal logic
+    
+actually_remove_log_files(_LogFiles) :-
+    true. % TODO: implement the actual removal logic    
+
+actually_remove_temp_files(_TempFiles) :-
+    true. % TODO: implement the actual removal logic
+
+actually_remove_kernels(_Kernels) :-
+    true. % TODO: implement the actual removal logic
+    
 %% sync_remote_kernels(+Host, +User) is det.
 % High-level convenience predicate.
 % After it succeeds, your removable_kernel/1 rule (Lesson 1) will
