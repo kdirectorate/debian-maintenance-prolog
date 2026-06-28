@@ -32,10 +32,10 @@ file_should_be_deleted(temp_file(_Path, SizeBytes, AgeSeconds)) :-
 %% files_to_delete(+MaxAgeDays, +MaxSizeMB, +FileList, -ToDelete)
 %% ============================================================
 % Collect all files that meet the deletion policy using findall/3
-files_to_delete(MaxAgeDays, MaxSizeMB, FileList, ToDelete) :-
+files_to_delete(FileList, ToDelete) :-
     findall(
         F, 
-        (member(F, FileList), file_should_be_deleted(MaxAgeDays, MaxSizeMB, F)), 
+        (member(F, FileList), file_should_be_deleted(F)), 
         ToDelete
     ).
 

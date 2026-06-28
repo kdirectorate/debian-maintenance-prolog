@@ -9,11 +9,16 @@
 %   - Clean error propagation (Python error JSON → Prolog failure + message)
 
 :- module(ssh_bridge, [
-    sync_remote_kernels/3,
+    sync_facts_from_remote/3,
     actually_remove_kernels/1,
     actually_remove_temp_files/1,
     actually_remove_log_files/1,
-    actually_remove_apt_packages/0
+    test_create_data/3,
+    actually_remove_apt_packages/0,
+    temp_file/3,
+    running_kernel/1,
+    installed_kernel/1,
+    autoremove_candidate/1
     ]).
 
 :- use_module(library(process)).
@@ -26,6 +31,8 @@
 % They start empty; we will retractall + assertz every time we sync.
 :- dynamic running_kernel/1.
 :- dynamic installed_kernel/1.
+:- dynamic temp_file/3.  % temp_file(Path, SizeBytes, AgeDays)
+:- dynamic autoremove_candidate/1.  % autoremove_candidate(PackageName)
 
 actually_remove_apt_packages() :-
     true. % TODO: implement the actual removal logic
@@ -38,7 +45,38 @@ actually_remove_temp_files(_TempFiles) :-
 
 actually_remove_kernels(_Kernels) :-
     true. % TODO: implement the actual removal logic
-    
+
+% -----------------------------------------------------------
+% SYNC predicates to collect facts from the remote system via SSH and JSON
+% -----------------------------------------------------------
+
+sync_facts_from_remote(Host, Port, User) :-
+    sync_remote_kernels(Host, Port, User),
+    sync_remote_temp_files(Host, Port, User),
+    sync_apt_autoremove(Host, Port, User).
+
+%% sync_apt_autoremove(+Host, +Port, +User) is det.
+% Add facts about packages that apt wants to remove to the Prolog database.
+sync_apt_autoremove(Host, Port, User) :-
+    collect_apt_autoremove(Host, Port, User, AutoremoveCandidates),
+    retractall(autoremove_candidate(_)),
+    maplist(assertz_autoremove_candidate, AutoremoveCandidates),
+    length(AutoremoveCandidates, Count),
+    format('~n[INFO] Loaded ~w apt autoremove candidates from remote.~n~n', [Count]).
+
+assertz_autoremove_candidate(Package) :- assertz(autoremove_candidate(Package)).
+
+%% collect_apt_autoremove(+Host, +Port, +User, -AutoremoveCandidates) is det.
+% Calls the Python helper and returns apt autoremove information on success
+collect_apt_autoremove(Host, Port, User, AutoremoveCandidates) :-
+    py_remote_executor(Host, Port, User, "collect_apt_autoremove", Response),
+    ( Response.status = "success" ->
+        AutoremoveCandidates = Response.data.autoremove_candidates
+    ; format("[ERR] Failed to collect apt autoremove information from remote: ~w~n", [Response.message]),
+      fail
+    ).
+
+
 %% sync_remote_kernels(+Host, +User) is det.
 % High-level convenience predicate.
 % After it succeeds, your removable_kernel/1 rule (Lesson 1) will
@@ -48,6 +86,7 @@ sync_remote_kernels(Host, Port, User) :-
     retractall(running_kernel(_)),
     retractall(installed_kernel(_)),
     assertz(running_kernel(Running)),
+    format('~n[INFO] Loaded running kernel from remote: ~w~n', [Running]),
     maplist(assertz_installed, Installed),
     length(Installed, Count),
     format('~n[INFO] Running kernel from remote: ~w~n', [Running]),
@@ -71,7 +110,8 @@ collect_remote_kernels(Host, Port, User, kernels(Running, Installed)) :-
 % Calls the Python helper and returns a list of temp_file(Path, SizeBytes, AgeDays) on success
 % or fails with a meaningful message on error.
 sync_remote_temp_files(Host, Port, User) :-
-    collect_remote_temp_files(Host, Port, User, TempFiles),
+    collect_remote_temp_files(Host, Port, User, JsonList),
+    maplist(json_to_temp_file, JsonList, TempFiles),
     retractall(temp_file(_, _, _)),
     maplist(assertz_temp_file, TempFiles),
     length(TempFiles, Count),
@@ -80,12 +120,41 @@ sync_remote_temp_files(Host, Port, User) :-
 assertz_temp_file(temp_file(Path, SizeBytes, AgeDays)) :-
     assertz(temp_file(Path, SizeBytes, AgeDays)).
 
+%% json_to_temp_file(+Dict, -Term) is det.
+% Converts a JSON list of 3 elements [Path, SizeBytes, AgeDays] into a Prolog term 
+% temp_file(Path, SizeBytes, AgeDays).
+json_to_temp_file([Path, SizeBytes, AgeDays], temp_file(Path, SizeBytes, AgeDays)).
+
 collect_remote_temp_files(Host, Port, User, TempFiles) :-
     py_remote_executor(Host, Port, User, "collect_temp_files", Response),
     ( Response.status = "success" ->
         TempFiles = Response.data.temp_files
     ; format("[ERR] Failed to collect temp files from remote: ~w~n", [Response.message]),
       fail
+    ).
+
+% -----------------------------------------------------------------------
+% Helper functions to setup the test environment
+% DO not call in production, only test.
+% -----------------------------------------------------------------------
+test_create_data(Host, Port, User) :-
+    test_create_temp_files(Host, Port, User),
+    test_create_apt_dependencies(Host, Port, User).
+
+test_create_apt_dependencies(Host, Port, User) :-
+    py_remote_executor(Host, Port, User, "t_create_apt_dependencies", Response),
+    (   Response.status = "success" ->
+            writeln("Test apt dependencies created.")
+    ;   format("[ERR] Failed to create test apt dependencies: ~w~n", [Response.message]),
+        fail
+    ).
+
+test_create_temp_files(Host, Port, User) :-
+    py_remote_executor(Host, Port, User, "t_create_tmp_files", Response),
+    (   Response.status = "success" ->
+            writeln("Test temp files created.")
+    ;   format("[ERR] Failed to create test temp files: ~w~n", [Response.message]),
+        fail
     ).
 
 %% py_remote_executor(+Host, +Port, +User, +Action, -Response) is det.

@@ -71,7 +71,11 @@ confirm_action(Description) :-
 parse_options([], Opts, Opts).
 parse_options(['-h' | T], Acc, Opts) :-
     parse_options(T, [display_help(true) | Acc], Opts).
-parse_options(['--dry-run' | T], Acc, Opts) :-
+
+parse_options(['-t' | T], Acc, Opts) :-
+    parse_options(T, [test_data(true) | Acc], Opts).
+
+parse_options(['-dry-run' | T], Acc, Opts) :-
     parse_options(T, [dry_run(true) | Acc], Opts).
 parse_options(['--host', Host | T], Acc, Opts) :-
     parse_options(T, [target_host(Host) | Acc], Opts).
@@ -91,10 +95,11 @@ main(Argv) :-
     (   member(display_help(true), Options),
         format('Usage: swipl -s main.pl [options]~n'),
         format('Options:~n'),
-        format('  --dry-run          : Show what would be done without making changes~n'),
+        format('  -dry-run           : Show what would be done without making changes~n'),
         format('  --host <hostname>  : Specify the target host (default: debian12-maint-test)~n'),
         format('  --port <port>      : Specify the SSH port (default: 22)~n'),
         format('  --user <username>  : Specify the SSH user (default: shinhwa)~n'),
+        format('  -t                 : Create test data on remote server. DO NOT USE IN PROD'),
         format('  -h                 : Display this help message~n'),
         halt(0)
     ;   true
@@ -104,9 +109,20 @@ main(Argv) :-
     ( member(target_port(Port), Options) ; default_target_port(Port) ),
     ( member(target_user(User), Options) ; default_target_user(User) ),
 
-    sync_remote_kernels(Host, Port, User),
+    ( member(test_data(true), Options),
+        writeln("+---------------------------------+"),
+        writeln("| CREATING TEST DATA...           |"),
+        writeln("+---------------------------------+"),
+        test_create_data(Host, Port, User)
+     ; true   
+    ),
     
-    % Gather system state from fa cts.pl (or later, from SSH)
+    !, % no going back after this point, we have the options we need
+
+    % Sync facts from the remote system via SSH and JSON
+    sync_facts_from_remote(Host, Port, User),
+
+    % Gather system state from synced facts and generate the report
     running_kernel(Running),
     findall(K, installed_kernel(K), Installed),
     findall(K, removable_kernel(Running, Installed, K), SafeKernels),

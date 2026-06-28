@@ -10,6 +10,7 @@
 
 :- use_module(library(readutil)).   % for read_line_to_string if you want prompts here too
 :- use_module('src/security_scanner').  % for explain_finding/1
+:- use_module('src/ssh_bridge').  % for running_kernel/1, installed_kernel/1, temp_file/3
 
 generate_maintenance_report(Host, SafeKernels, TempFiles, Findings, AptPackages, Mode) :-
     get_time(Stamp),
@@ -20,6 +21,11 @@ generate_maintenance_report(Host, SafeKernels, TempFiles, Findings, AptPackages,
     format('Generated: ~w   Mode: ~w~n', [Timestamp, Mode]),
     format('========================================~n~n'),
 
+    format('Running Kernel: '),
+    (   running_kernel(RunningKernel) ->
+        format('  - ~w~n', [RunningKernel])
+    ;   format('  - Unknown (no running_kernel/1 fact)~n')
+    ),
     report_kernels_section(SafeKernels, Mode),
     writeln(''),
     report_temp_section(TempFiles, Mode),
