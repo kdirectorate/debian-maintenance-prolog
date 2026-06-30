@@ -49,72 +49,48 @@ def _package_results(status: str, message: str, action: str, data: dict) -> dict
         "data": data
     }
 
-# ---------------------------------------------------------------------------
-# Create Test Data
-#
-# Creates test files on the server that can later be acted upon by the app.
-# ONLY USE IN TEST, not PROD.
-# ---------------------------------------------------------------------------
+# Helper to run a command on the remote host
+def run_command_on_remote(args: argparse.Namespace, cmd: str) -> dict:
+    """Run a command on the remote host and return the result as a package."""
 
-def do_t_create_tmp_files(args: argparse.Namespace) -> int:
-    try:
-        CMDs = [
-            "fallocate -l 7M  /tmp/test_temp_7mb_expired",
-            "fallocate -l 20M /tmp/test_temp_20mb_expired",
-            "fallocate -l 20M /tmp/test_temp_20mb_current",
-            """touch -d "7 days ago" /tmp/test_temp_7mb_expired /tmp/test_temp_20mb_expired"""
-        ]
-        action = _current_action()
-        user = args.user or "root"
-        connect_kwargs = {"allow_agent": True, "look_for_keys": True}
-        if args.key is not None:
-            connect_kwargs["key_filename"] = str(args.key)
+    user = args.user or "root"
+    connect_kwargs = {"allow_agent": True, "look_for_keys": True}
+    if args.key is not None:
+        connect_kwargs["key_filename"] = str(args.key)
 
-        for cmd in CMDs:
-            result = Connection(
-                host=args.host,
-                port=args.port,
-                user=user,
-                connect_kwargs=connect_kwargs,
-            ).run(cmd, hide=True)
-        package = _package_results("success", "Test /tmp files created", action, {})
-    except Exception as e:
-        package = _package_results("error", f"Failed creating /tmp files: {e}", action, {})
+    result = Connection(
+        host=args.host,
+        port=args.port,
+        user=user,
+        connect_kwargs=connect_kwargs,
+    ).run(cmd, hide=True, warn=True)
 
-    return package
+    return result
 
-def do_t_create_apt_dependencies(args: argparse.Namespace) -> int:
-    try:
-        CMDs = [
-            "sudo apt-get update",
-            "sudo apt-get install -y debtree",
-            "sudo apt-get remove -y debtree"
-        ]
-        action = _current_action()
-        user = args.user or "root"
-        connect_kwargs = {"allow_agent": True, "look_for_keys": True}
-        if args.key is not None:
-            connect_kwargs["key_filename"] = str(args.key)
-        
-        action = _current_action()
-        user = args.user or "root"
-        connect_kwargs = {"allow_agent": True, "look_for_keys": True}
-        if args.key is not None:
-            connect_kwargs["key_filename"] = str(args.key)
+def get_remote_time(args: argparse.Namespace) -> float:
+    """Get the current time on the remote host in seconds since the epoch."""
+    CMD = "date +%s"
+    result = run_command_on_remote(args, CMD)
+    return float(result.stdout.strip())
 
-        for cmd in CMDs:
-            result = Connection(
-                host=args.host,
-                port=args.port,
-                user=user,
-                connect_kwargs=connect_kwargs,
-            ).run(cmd, hide=True)
-        package = _package_results("success", "Test apt dependencies created", action, {})
-    except Exception as e:
-        package = _package_results("error", f"Failed creating test apt dependencies: {e}", action, {})
+def get_remote_directory(args: argparse.Namespace, path: str) -> dict:
+    """Get file size and modification time files on the remote host."""
 
-    return package
+    current_remote_time = get_remote_time(args)
 
+    CMD = f"sudo find {path} -type f -mtime -30 -printf '%p\t%s\t%T@\n'"
+    result = run_command_on_remote(args, CMD)
+    files = []
+    for line in result.stdout.splitlines():
+        if line.startswith(path):
+            file_path, sizebytes, age = line.split("\t")
+            sizemb = round(int(sizebytes) / (1024*1024), 2)
+            # Calculate the age in days by subtracting the file's modification time from 
+            # the current remote time and converting seconds to days.
+            age_days = round(float(current_remote_time - float(age)) / (60*60*24), 2)  # age in days
+            files.append((file_path, sizemb, age_days))
+
+    return files # list of tuples (path, size in MB, age in days)
 
 # ---------------------------------------------------------------------------
 # Action handlers
@@ -124,30 +100,41 @@ def do_t_create_apt_dependencies(args: argparse.Namespace) -> int:
 # user passes on the command line.
 # ---------------------------------------------------------------------------
 
+def do_collect_modified_files(args: argparse.Namespace) -> int:
+    """Get a list of modified files from the remote host."""
+    try:
+        DIRS = [
+            "/etc", "/bin", "/usr/bin", 
+            "/usr/local/etc", "/usr/local/bin", "/usr/local/sbin"
+        ]
+
+        action = _current_action()
+        modified_files = []
+        for dir in DIRS:
+            files = get_remote_directory(args, dir)
+            modified_files.extend(files)
+
+        package = _package_results("success", "Modified files collected successfully", 
+                                   action, {"modified_files": modified_files})
+    except Exception as e:
+        package = _package_results("error", f"Failed to collect modified files: {e}", action, {})
+
+    return package
+
 def do_collect_temp_files(args: argparse.Namespace) -> int:
     """Get a list of temporary files from the remote host."""
     try:
-        CMD = "sudo find /tmp -type f -printf '%p %s %T@\n'"
         action = _current_action()
-        user = args.user or "root"
-        connect_kwargs = {"allow_agent": True, "look_for_keys": True}
-        if args.key is not None:
-            connect_kwargs["key_filename"] = str(args.key)
+        DIRS = [
+            "/tmp", "/var/tmp"
+        ]
 
-        result = Connection(
-            host=args.host,
-            port=args.port,
-            user=user,
-            connect_kwargs=connect_kwargs,
-        ).run(CMD, hide=True)
-
-        # Parse the running kernel name and the list of installed kernels from the command output.
+        action = _current_action()
         temp_files = []
-        line = None
-        for line in result.stdout.splitlines():
-            if line.startswith("/tmp/"):
-                path, sizebytes, age = line.split(" ", 2)
-                temp_files.append((path, int(sizebytes), float(age)))
+        for dir in DIRS:
+            files = get_remote_directory(args, dir)
+            temp_files.extend(files)
+
         package = _package_results("success", "Temporary files collected successfully", 
                                    action, {"temp_files": temp_files})
     except Exception as e:
@@ -161,18 +148,8 @@ def do_collect_kernels(args: argparse.Namespace) -> int:
     try:
         CMD = "uname -r && echo '---KERNELS---' && dpkg-query -W -f='${Package}\n' 'linux-image-*'"
         action = _current_action()
-        user = args.user or "root"
-        connect_kwargs = {"allow_agent": True, "look_for_keys": True}
-        if args.key is not None:
-            connect_kwargs["key_filename"] = str(args.key)
-
         notes = f"[DEBUG] Running command on remote {args.host}:{args.port}]: {CMD}"
-        result = Connection(
-            host=args.host,
-            port=args.port,
-            user=user,
-            connect_kwargs=connect_kwargs,
-        ).run(CMD, hide=True)
+        result = run_command_on_remote(args, CMD)
 
         # Parse the running kernel name and the list of installed kernels from the command output.
         data = {
@@ -192,18 +169,9 @@ def do_collect_apt_autoremove(args: argparse.Namespace) -> int:
     try:
         CMD = "sudo apt autoremove --dry-run -q | grep 'The following packages will be REMOVED:' -A 1000 | tail -n +2"
         action = _current_action()
-        user = args.user or "root"
-        connect_kwargs = {"allow_agent": True, "look_for_keys": True}
-        if args.key is not None:
-            connect_kwargs["key_filename"] = str(args.key)
 
         notes = f"[DEBUG] Running command on remote {args.host}:{args.port}]: {CMD}"
-        result = Connection(
-            host=args.host,
-            port=args.port,
-            user=user,
-            connect_kwargs=connect_kwargs,
-        ).run(CMD, hide=True)
+        result = run_command_on_remote(args, CMD)
 
         # Parse the autoremove candidates from the command output.
         data = {
@@ -213,6 +181,67 @@ def do_collect_apt_autoremove(args: argparse.Namespace) -> int:
         package = _package_results("success", "Autoremove candidates collected successfully", action, data)
     except Exception as e:
         package = _package_results("error", f"Failed to collect autoremove candidates: {e}", action, {})
+
+    return package
+            
+
+# ---------------------------------------------------------------------------
+# Create Test Data
+#
+# Creates test files on the server that can later be acted upon by the app.
+# ONLY USE IN TEST, not PROD.
+# ---------------------------------------------------------------------------
+
+def do_t_tamper_critical_files(args: argparse.Namespace) -> int:
+    try:
+        CMDs = [
+            """sudo touch -d "2 days ago" /etc/passwd""",
+        ]
+        action = _current_action()
+
+        for cmd in CMDs:
+            run_command_on_remote(args, cmd)
+
+        package = _package_results("success", "Tampered with critical files", action, {})
+    except Exception as e:
+        package = _package_results("error", f"Failed tampering with critical files: {e}", action, {})
+
+    return package
+
+def do_t_create_tmp_files(args: argparse.Namespace) -> int:
+    try:
+        CMDs = [
+            "fallocate -l 7M  /tmp/test_temp_7mb_expired",
+            "fallocate -l 20M /tmp/test_temp_20mb_expired",
+            "fallocate -l 20M /tmp/test_temp_20mb_current",
+            "touch -d '7 days ago' /tmp/test_temp_7mb_expired /tmp/test_temp_20mb_expired",
+            "touch -d '1 day ago' /tmp/test_temp_20mb_current",
+        ]
+        action = _current_action()
+
+        for cmd in CMDs:
+            run_command_on_remote(args, cmd)
+        package = _package_results("success", "Test /tmp files created", action, {})
+    except Exception as e:
+        package = _package_results("error", f"Failed creating /tmp files: {e}", action, {})
+
+    return package
+
+def do_t_create_apt_dependencies(args: argparse.Namespace) -> int:
+    try:
+        CMDs = [
+            "sudo apt-get update",
+            "sudo apt-get install -y debtree",
+            "sudo apt-get remove -y debtree"
+        ]
+        action = _current_action()
+
+        for cmd in CMDs:
+            run_command_on_remote(args, cmd)
+
+        package = _package_results("success", "Test apt dependencies created", action, {})
+    except Exception as e:
+        package = _package_results("error", f"Failed creating test apt dependencies: {e}", action, {})
 
     return package
 

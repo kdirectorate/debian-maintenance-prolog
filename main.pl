@@ -13,9 +13,6 @@
 
 :- use_module(library(main)).
 
-% test facts
-:- use_module('src/facts').
-
 :- use_module('config/default_policy').
 :- use_module('src/ssh_bridge').
 :- use_module('src/kernel_cleaner').
@@ -121,25 +118,20 @@ main(Argv) :-
 
     % Sync facts from the remote system via SSH and JSON
     sync_facts_from_remote(Host, Port, User),
-
+    
     % Gather system state from synced facts and generate the report
     running_kernel(Running),
+
     findall(K, installed_kernel(K), Installed),
     findall(K, removable_kernel(Running, Installed, K), SafeKernels),
-    findall(P,
-        (   temp_file(P, S, A),
-            file_should_be_deleted( temp_file(P, S, A))
-        ),
-        TempFiles
-    ),
-    /* findall(log_file(Path, SizeBytes),
-        (   log_file(Path, SizeBytes),
-            log_should_be_truncated(log_file(Path, SizeBytes))
-        ),
-        LogFiles
-    ),*/
     findall(P, autoremove_candidate(P), AutoremoveCandidates),
+    findall(temp_file(P, S, A),
+        (temp_file(P, S, A),
+            file_should_be_deleted(P, S, A)), 
+        TempFilesToDelete
+    ),
+
     collect_findings(Findings),
-    generate_maintenance_report('localhost', SafeKernels, TempFiles, Findings, AutoremoveCandidates, dry_run).
+    generate_maintenance_report('localhost', SafeKernels, TempFilesToDelete, Findings, AutoremoveCandidates, dry_run).
 
     % Process command-line arguments (later)

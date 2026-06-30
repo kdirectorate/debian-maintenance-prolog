@@ -19,28 +19,18 @@
 :- module(facts, [
     listening_port/2,
     failed_login/3,
-    modified_file/2,
     process/4,
     user_account/3,
     log_file/2
     ]).
 
-% === Facts generated from `apt autoremove --dry-run` ===
+% we are aren't doing logfiles right now until we get a
+% better rule set to decide which ones to keep and which ones to delete.
+% log_file('/var/log/bigfile.log', 20971520).
+% log_file('/var/log/smallfile.log', 1000).
+% log_file('/var/log/rotated.log.1', 20971520).
 
-% All packages that apt wants to remove
-% autoremove_candidate('libdbus-glib-1-2').
-% autoremove_candidate('libmodule-scandeps-perl').
-% autoremove_candidate('libslirp0').
-% autoremove_candidate('libu2f-udev').
-% autoremove_candidate('slirp4netns').
-% autoremove_candidate('tini').
-
-
-log_file('/var/log/bigfile.log', 20971520).
-log_file('/var/log/smallfile.log', 1000).
-log_file('/var/log/rotated.log.1', 20971520).
-
-modified_file('/etc/passwd', 4).
+%critical_file('/etc/passwd', 4).
 
 process('sshd', 1234, 'root', '2024-06-01T12:00:00Z').
 

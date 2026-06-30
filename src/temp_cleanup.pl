@@ -1,11 +1,12 @@
 :- module(temp_cleanup, [
-    file_should_be_deleted/1,    % AgeDays, SizeMB, FileTerm
-    files_to_delete/4,
+    file_should_be_deleted/3,
     reclaimed_space/2
 ]).
 
 :- use_module(library(lists)).
 :- use_module('config/default_policy').   % thresholds & whitelists live here
+:- use_module('src/ssh_bridge').  % for temp_file/3
+
 
 /* Teaching note:
    Lesson 2 introduced head/tail recursion. We keep a recursive helper
@@ -14,30 +15,19 @@
    the declarative "policy rule".
 */
 
+
 %% ============================================================
 %% file_should_be_deleted(+MaxAgeDays, +MaxSizeMB, +FileTerm)
 %% ============================================================
 % Declarative policy rule: a file should be deleted if it is older than
-% MaxAgeDays or larger than MaxSizeMB. FileTerm is a temp_file(Path,
-file_should_be_deleted(temp_file(_Path, SizeBytes, AgeSeconds)) :-
-    AgeDays is AgeSeconds / 86400,
-    SizeMB is SizeBytes / (1024*1024),
+% MaxAgeDays and larger than MaxSizeMB. FileTerm is a temp_file(Path,
+file_should_be_deleted(Path, SizeMB, AgeDays) :-
     max_temp_age_days(MaxAgeDays),
     max_temp_size_mb(MaxSizeMB),
-    (   AgeDays > MaxAgeDays
-    ;   SizeMB > MaxSizeMB
-    ).
+    AgeDays > MaxAgeDays,
+    SizeMB > MaxSizeMB,
+    format('~n[INFO] File ~w (~w MB, ~w days old) is older than ~w days and larger than ~w MB, marked for deletion.~n', [Path, SizeMB, AgeDays, MaxAgeDays, MaxSizeMB]).
 
-%% ============================================================
-%% files_to_delete(+MaxAgeDays, +MaxSizeMB, +FileList, -ToDelete)
-%% ============================================================
-% Collect all files that meet the deletion policy using findall/3
-files_to_delete(FileList, ToDelete) :-
-    findall(
-        F, 
-        (member(F, FileList), file_should_be_deleted(F)), 
-        ToDelete
-    ).
 
 %% ============================================================
 %% reclaimed_space(+FileList, -TotalBytes)

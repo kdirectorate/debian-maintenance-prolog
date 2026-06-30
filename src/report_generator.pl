@@ -1,11 +1,6 @@
 :- module(report_generator, [
     generate_maintenance_report/6,   % +Host, +SafeKernels, +TempToDelete, +SecurityFindings, +Mode
-    write_report_to_file/2,
-    report_kernels_section/2,        % +SafeKernels, +Mode
-    report_temp_section/2,           % +TempToDelete, +Mode
-    report_security_section/1,       % +SecurityFindings
-    report_log_section/2,             % +LogEntries, +Mode
-    report_apt_section/2              % +AptEntries, +Mode
+    write_report_to_file/2
 ]).
 
 :- use_module(library(readutil)).   % for read_line_to_string if you want prompts here too
@@ -41,6 +36,9 @@ generate_maintenance_report(Host, SafeKernels, TempFiles, Findings, AptPackages,
     format('========================================~n'),
     format('~n--- End of Report ---~n~n').
 
+% -----------------------------------------------------------
+% APT section
+% -----------------------------------------------------------
 report_apt_section([], _) :-
     format('[APT] No packages meet the auto-remove criteria.~n').
 report_apt_section(ToRemove, dry_run) :-
@@ -52,6 +50,9 @@ report_apt_section(ToRemove, execute) :-
     format('[APT] ACTION — auto-removing ~d package(s):~n', [N]),
     forall(member(P, ToRemove), format('  - ~w~n', [P])).
 
+% -----------------------------------------------------------
+% Kernels section
+% -----------------------------------------------------------
 report_kernels_section([], _) :-
     format('[Kernels] No old kernels are safe to remove.~n').
 report_kernels_section(Ks, dry_run) :-
@@ -63,6 +64,9 @@ report_kernels_section(Ks, execute) :-
     format('[Kernels] ACTION — removing ~d kernel(s):~n', [N]),
     forall(member(K, Ks), format('  - ~w~n', [K])).
 
+% -----------------------------------------------------------
+% Security section
+% -----------------------------------------------------------
 report_security_section([]) :-
     format('[Security] No security issues found.~n').
 report_security_section(Findings) :-
@@ -70,17 +74,23 @@ report_security_section(Findings) :-
     format('[Security] Found ~d security issue(s):~n', [N]),
     forall(member(F, Findings), explain_finding(F)).
 
+% -----------------------------------------------------------
+% Temp files section
+% -----------------------------------------------------------
 report_temp_section([], _) :-
     format('[Temp Files] No temp files meet the deletion criteria.~n').
-report_temp_section(ToDelete, dry_run) :-
-    length(ToDelete, N),
+report_temp_section(ToDeleteTempFiles, dry_run) :-
+    length(ToDeleteTempFiles, N),
     format('[Temp Files] DRY RUN — would delete ~d temp file(s):~n', [N]),
-    forall(member(F, ToDelete), format('  - ~w~n', [F])).
-report_temp_section(ToDelete, execute) :-
-    length(ToDelete, N),
+    forall(member(F, ToDeleteTempFiles), format('  - ~w~n', [F])).
+report_temp_section(ToDeleteTempFiles, execute) :-
+    length(ToDeleteTempFiles, N),
     format('[Temp Files] ACTION — deleting ~d temp file(s):~n', [N]),
-    forall(member(F, ToDelete), format('  - ~w~n', [F])).
+    forall(member(F, ToDeleteTempFiles), format('  - ~w~n', [F])).
 
+% -----------------------------------------------------------
+% Log files section
+% -----------------------------------------------------------
 % See notes in log_manager.pl about why this is not currently implemented.
 report_log_section([], _) :-
     format('[Log Files] No log files meet the deletion criteria.~n').
@@ -92,6 +102,8 @@ report_log_section(ToDelete, execute) :-
     length(ToDelete, N),
     format('[Log Files] ACTION — deleting ~d log file(s):~n', [N]),
     forall(member(F, ToDelete), format('  - ~w~n', [F])).
+
+
 
 write_report_to_file(GeneratorGoal, Filename) :-
     open(Filename, write, Stream),

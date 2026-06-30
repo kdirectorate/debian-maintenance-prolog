@@ -18,7 +18,8 @@
     temp_file/3,
     running_kernel/1,
     installed_kernel/1,
-    autoremove_candidate/1
+    autoremove_candidate/1,
+    modified_file/2
     ]).
 
 :- use_module(library(process)).
@@ -31,14 +32,15 @@
 % They start empty; we will retractall + assertz every time we sync.
 :- dynamic running_kernel/1.
 :- dynamic installed_kernel/1.
-:- dynamic temp_file/3.  % temp_file(Path, SizeBytes, AgeDays)
+:- dynamic temp_file/3.  % temp_file(Path, SizeMB, AgeDays)
 :- dynamic autoremove_candidate/1.  % autoremove_candidate(PackageName)
+:- dynamic modified_file/2.  % modified_file(Path, Timestamp)
 
 actually_remove_apt_packages() :-
     true. % TODO: implement the actual removal logic
-    
+
 actually_remove_log_files(_LogFiles) :-
-    true. % TODO: implement the actual removal logic    
+    true. % TODO: implement the actual removal logic
 
 actually_remove_temp_files(_TempFiles) :-
     true. % TODO: implement the actual removal logic
@@ -53,16 +55,47 @@ actually_remove_kernels(_Kernels) :-
 sync_facts_from_remote(Host, Port, User) :-
     sync_remote_kernels(Host, Port, User),
     sync_remote_temp_files(Host, Port, User),
-    sync_apt_autoremove(Host, Port, User).
+    sync_apt_autoremove(Host, Port, User),
+    sync_modified_files(Host, Port, User).
+
+sync_modified_files(Host, Port, User) :-
+    collect_modified_files(Host, Port, User, JsonList),
+    retractall(modified_file(_, _)),
+    maplist(json_to_modified_file, JsonList, ModifiedFiles),
+    maplist(assertz_modified_file, ModifiedFiles),
+    length(ModifiedFiles, Count),
+    format("[INFO] Loaded ~w modified files from remote.~n~n", [Count]).
+
+%% json_to_modified_file(+List, -Term) is det.
+% Converts a JSON 3-element list [Path, SizeMB, Timestamp] into a Prolog term
+% modified_file(Path, Timestamp).
+json_to_modified_file([Path, _SizeMB, Timestamp], modified_file(PathAtom, Timestamp)) :-
+    atom_string(PathAtom, Path).
+
+assertz_modified_file(modified_file(Path, Timestamp)) :-
+    assertz(modified_file(Path, Timestamp)).
+
+
+collect_modified_files(Host, Port, User, ModifiedFiles) :-
+    py_remote_executor(Host, Port, User, "collect_modified_files", Response),
+    ( Response.status = "success" ->
+        ModifiedFiles = Response.data.modified_files
+    ; format("[ERR] Failed to collect modified files from remote: ~w~n", [Response.message]),
+      fail
+    ).
 
 %% sync_apt_autoremove(+Host, +Port, +User) is det.
 % Add facts about packages that apt wants to remove to the Prolog database.
 sync_apt_autoremove(Host, Port, User) :-
     collect_apt_autoremove(Host, Port, User, AutoremoveCandidates),
     retractall(autoremove_candidate(_)),
-    maplist(assertz_autoremove_candidate, AutoremoveCandidates),
-    length(AutoremoveCandidates, Count),
-    format('~n[INFO] Loaded ~w apt autoremove candidates from remote.~n~n', [Count]).
+    maplist(json_to_autoremove_candidate, AutoremoveCandidates, PrologCandidates),
+    maplist(assertz_autoremove_candidate, PrologCandidates),
+    length(PrologCandidates, Count),
+    format("[INFO] Loaded ~w apt autoremove candidates from remote.~n~n", [Count]).
+
+json_to_autoremove_candidate(PackageName, autoremove_candidate(PackageAtom)) :-
+    atom_string(PackageAtom, PackageName).
 
 assertz_autoremove_candidate(Package) :- assertz(autoremove_candidate(Package)).
 
@@ -85,12 +118,22 @@ sync_remote_kernels(Host, Port, User) :-
     collect_remote_kernels(Host, Port, User, kernels(Running, Installed)),
     retractall(running_kernel(_)),
     retractall(installed_kernel(_)),
-    assertz(running_kernel(Running)),
+    json_to_installed_kernel(Running, RunningTerm),
+    assertz(running_kernel(RunningTerm)),
     format('~n[INFO] Loaded running kernel from remote: ~w~n', [Running]),
-    maplist(assertz_installed, Installed),
+    json_to_installed_kernel_list(Installed, InstalledTerms),
+    maplist(assertz_installed, InstalledTerms),
     length(Installed, Count),
     format('~n[INFO] Running kernel from remote: ~w~n', [Running]),
     format('[INFO] Loaded ~w other installed kernels.~n~n', [Count]).
+
+json_to_installed_kernel_list([], []).
+json_to_installed_kernel_list([KernelString | Rest], [installed_kernel(KernelAtom) | RestTerms]) :-
+    atom_string(KernelAtom, KernelString),
+    json_to_installed_kernel_list(Rest, RestTerms).
+
+json_to_installed_kernel(KernelString, installed_kernel(KernelAtom)) :-
+    atom_string(KernelAtom, KernelString).
 
 assertz_installed(K) :- assertz(installed_kernel(K)).
 
@@ -111,20 +154,21 @@ collect_remote_kernels(Host, Port, User, kernels(Running, Installed)) :-
 % or fails with a meaningful message on error.
 sync_remote_temp_files(Host, Port, User) :-
     collect_remote_temp_files(Host, Port, User, JsonList),
-    maplist(json_to_temp_file, JsonList, TempFiles),
     retractall(temp_file(_, _, _)),
+    maplist(json_to_temp_file, JsonList, TempFiles),
     maplist(assertz_temp_file, TempFiles),
     length(TempFiles, Count),
     format('~n[INFO] Loaded ~w temp files from remote.~n~n', [Count]).
 
-assertz_temp_file(temp_file(Path, SizeBytes, AgeDays)) :-
-    assertz(temp_file(Path, SizeBytes, AgeDays)).
+assertz_temp_file(temp_file(Path, SizeMB , AgeDays)) :-
+    assertz(temp_file(Path, SizeMB, AgeDays)).
 
 %% json_to_temp_file(+Dict, -Term) is det.
-% Converts a JSON list of 3 elements [Path, SizeBytes, AgeDays] into a Prolog term 
-% temp_file(Path, SizeBytes, AgeDays).
-json_to_temp_file([Path, SizeBytes, AgeDays], temp_file(Path, SizeBytes, AgeDays)).
-
+% Converts a JSON list of 3 elements [Path, SizeMB, AgeDays] into a Prolog term
+% temp_file(Path, SizeMB, AgeDays).
+json_to_temp_file([Path, SizeMB, AgeDays], temp_file(PathAtom, SizeMB, AgeDays)) :-
+    atom_string(PathAtom, Path).
+    
 collect_remote_temp_files(Host, Port, User, TempFiles) :-
     py_remote_executor(Host, Port, User, "collect_temp_files", Response),
     ( Response.status = "success" ->
@@ -139,7 +183,16 @@ collect_remote_temp_files(Host, Port, User, TempFiles) :-
 % -----------------------------------------------------------------------
 test_create_data(Host, Port, User) :-
     test_create_temp_files(Host, Port, User),
-    test_create_apt_dependencies(Host, Port, User).
+    test_create_apt_dependencies(Host, Port, User),
+    test_tamper_critical_files(Host, Port, User).
+
+test_tamper_critical_files(Host, Port, User) :-
+    py_remote_executor(Host, Port, User, "t_tamper_critical_files", Response),
+    (   Response.status = "success" ->
+            writeln("Test critical files tampered.")
+    ;   format("[ERR] Failed to tamper test critical files: ~w~n", [Response.message]),
+        fail
+    ).
 
 test_create_apt_dependencies(Host, Port, User) :-
     py_remote_executor(Host, Port, User, "t_create_apt_dependencies", Response),

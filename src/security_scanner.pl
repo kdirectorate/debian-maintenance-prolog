@@ -11,21 +11,22 @@
 
 :- use_module(library(lists)).
 :- use_module('config/default_policy').   % thresholds & whitelists live here
-% TODO: later we will use the SSH bridge to collect facts from the remote host
-:- use_module('src/facts').  % for listening_port/2, failed_login/3, modified_file/2, process/4, user_account/3
+%:- use_module('src/facts').  % for listening_port/2, failed_login/3, modified_file/2, process/4, user_account/3
+:- use_module('src/ssh_bridge').  % for listening_port/2, failed_login/3, modified_file/2, process/4, user_account/3
 
 % ============================================================
 % MAIN ENTRY POINT
 % ============================================================
 
 collect_findings(Findings) :-
-    collect_port_findings(PortFindings),
-    collect_brute_force_findings(BruteFindings),
+    %collect_port_findings(PortFindings),
+    %collect_brute_force_findings(BruteFindings),
     collect_file_mod_findings(FileFindings),
-    collect_suspicious_process_findings(ProcFindings),
-    collect_uid0_findings(UID0Findings),
-    append([PortFindings, BruteFindings, FileFindings, ProcFindings, UID0Findings],
-           Unsorted),
+    %collect_suspicious_process_findings(ProcFindings),
+    %collect_uid0_findings(UID0Findings),
+    %append([PortFindings, BruteFindings, FileFindings, ProcFindings, UID0Findings],
+    %       Unsorted),
+    append([FileFindings], Unsorted),  % only file mod findings for now
     sort(Unsorted, Findings).   % remove any accidental duplicates
 
 
@@ -99,10 +100,10 @@ brute_force_from(IP, Count) :-
 % ============================================================
 
 check_recent_critical_mod(What, high, Evidence, Recommendation) :-
-    modified_file(Path, AgeDays),
     critical_file(Path),
+    modified_file(Path, AgeDays),
     AgeDays =< 7,                    % within last week
-    format(atom(What), 'Critical file ~w modified ~w days ago', [Path, AgeDays]),
+    format(atom(What), 'Modified file ~w modified ~w days ago', [Path, AgeDays]),
     Evidence = modified_file(Path, AgeDays),
     Recommendation = 'Verify with: debsums -c ~w or dpkg -V. Check package manager history (apt history.log). If unexpected, treat as potential compromise. Compare mtime with last legitimate update.'.
 
