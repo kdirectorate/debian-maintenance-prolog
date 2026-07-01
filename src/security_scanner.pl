@@ -12,7 +12,7 @@
 :- use_module(library(lists)).
 :- use_module('config/default_policy').   % thresholds & whitelists live here
 %:- use_module('src/facts').  % for listening_port/2, failed_login/3, modified_file/2, process/4, user_account/3
-:- use_module('src/ssh_bridge').  % for listening_port/2, failed_login/3, modified_file/2, process/4, user_account/3
+:- use_module('src/context').             % for modified_file/2 and other remote facts
 
 % ============================================================
 % MAIN ENTRY POINT

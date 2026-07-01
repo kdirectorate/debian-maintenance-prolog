@@ -9,7 +9,8 @@
     default_target_host/1,
     default_target_port/1,
     default_target_user/1,
-    critical_file/1
+    critical_file/1,
+    report_file/1
 ]).
 
 % ============================================================
@@ -19,6 +20,8 @@
 default_target_host('localhost').
 default_target_port(22).  % default SSH port
 default_target_user('root').
+
+report_file('./maintenance_report.log').
     
 max_temp_age_days(5).
 max_temp_size_mb(10).

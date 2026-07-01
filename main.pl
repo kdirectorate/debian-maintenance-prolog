@@ -14,6 +14,7 @@
 :- use_module(library(main)).
 
 :- use_module('config/default_policy').
+:- use_module('src/context').
 :- use_module('src/ssh_bridge').
 :- use_module('src/kernel_cleaner').
 :- use_module('src/temp_cleanup').
@@ -21,6 +22,8 @@
 :- use_module('src/apt_maintainer').
 :- use_module('src/security_scanner').
 :- use_module('src/report_generator').
+
+
 
 /* Teaching note (debugging helper):
    debug_run(:Goal) runs Goal and, if it throws, prints a full user-level
@@ -54,6 +57,22 @@ show_banner :-
    4. Produce the report (Lesson 7)
 */
 
+make_changes:-
+    target_host(Host),
+    target_port(Port),
+    target_user(User),
+    deleteable_temp_files(FilesToDelete),
+    ( FilesToDelete == [] ->
+        format('~n[INFO] No temp files to delete.~n')
+    ; confirm_action('maintenance actions'),
+    
+        forall(
+            member(F, FilesToDelete), 
+            actually_remove_temp_file(Host, Port, User, F)
+        ),
+        format('~n[INFO] All marked temp files deleted.~n')
+    ).
+
 confirm_action(Description) :-
     format('~n>>> About to perform: ~w~n', [Description]),
     format('    Proceed? [y/N]: '),
@@ -72,7 +91,7 @@ parse_options(['-h' | T], Acc, Opts) :-
 parse_options(['-t' | T], Acc, Opts) :-
     parse_options(T, [test_data(true) | Acc], Opts).
 
-parse_options(['-dry-run' | T], Acc, Opts) :-
+parse_options(['--dry-run' | T], Acc, Opts) :-
     parse_options(T, [dry_run(true) | Acc], Opts).
 parse_options(['--host', Host | T], Acc, Opts) :-
     parse_options(T, [target_host(Host) | Acc], Opts).
@@ -92,11 +111,11 @@ main(Argv) :-
     (   member(display_help(true), Options),
         format('Usage: swipl -s main.pl [options]~n'),
         format('Options:~n'),
-        format('  -dry-run           : Show what would be done without making changes~n'),
+        format('  --dry-run           : Show what would be done without making changes~n'),
         format('  --host <hostname>  : Specify the target host (default: debian12-maint-test)~n'),
         format('  --port <port>      : Specify the SSH port (default: 22)~n'),
         format('  --user <username>  : Specify the SSH user (default: shinhwa)~n'),
-        format('  -t                 : Create test data on remote server. DO NOT USE IN PROD'),
+        format('  -t                 : Create test data on remote server. DO NOT USE IN PROD~n'),
         format('  -h                 : Display this help message~n'),
         halt(0)
     ;   true
@@ -105,6 +124,14 @@ main(Argv) :-
     ( member(target_host(Host), Options) ; default_target_host(Host) ),
     ( member(target_port(Port), Options) ; default_target_port(Port) ),
     ( member(target_user(User), Options) ; default_target_user(User) ),
+    assertz(target_host(Host)),
+    assertz(target_port(Port)),
+    assertz(target_user(User)),
+
+    (member(dry_run(true), Options)
+    ->  assertz(run_mode(dry_run))
+    ;   assertz(run_mode(execute))
+    ),
 
     ( member(test_data(true), Options),
         writeln("+---------------------------------+"),
@@ -121,17 +148,28 @@ main(Argv) :-
     
     % Gather system state from synced facts and generate the report
     running_kernel(Running),
-
     findall(K, installed_kernel(K), Installed),
     findall(K, removable_kernel(Running, Installed, K), SafeKernels),
     findall(P, autoremove_candidate(P), AutoremoveCandidates),
     findall(temp_file(P, S, A),
         (temp_file(P, S, A),
             file_should_be_deleted(P, S, A)), 
-        TempFilesToDelete
+        TempFilesToDelete),
+    assertz(deleteable_temp_files(TempFilesToDelete)),
+
+    % security_scanner
+    collect_findings(Findings),
+
+    % Generate the report and write it to a file and the terminal
+    write_and_display(
+        generate_maintenance_report(SafeKernels, Findings, AutoremoveCandidates),
+        'maintenance_report.txt'
     ),
 
-    collect_findings(Findings),
-    generate_maintenance_report('localhost', SafeKernels, TempFilesToDelete, Findings, AutoremoveCandidates, dry_run).
 
-    % Process command-line arguments (later)
+    (   run_mode(execute) ->
+        make_changes
+    ;   format('~n[INFO] Dry run complete. No changes made.~n')
+    ),
+    halt(0).
+    

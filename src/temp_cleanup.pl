@@ -5,7 +5,7 @@
 
 :- use_module(library(lists)).
 :- use_module('config/default_policy').   % thresholds & whitelists live here
-:- use_module('src/ssh_bridge').  % for temp_file/3
+:- use_module('src/context').             % for temp_file/3
 
 
 /* Teaching note:

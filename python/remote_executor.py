@@ -3,6 +3,9 @@
 Dispatches an ``--action`` keyword to a corresponding ``do_<keyword>``
 function. New actions are added simply by defining another ``do_<name>``
 function in this module.
+
+Note: This module follows, sort of, Prolog's naming conventions since it
+is mostly a Prolog helper. 
 """
 
 from __future__ import annotations
@@ -99,6 +102,24 @@ def get_remote_directory(args: argparse.Namespace, path: str) -> dict:
 # valid value for ``--action``. The suffix after ``do_`` is the keyword the
 # user passes on the command line.
 # ---------------------------------------------------------------------------
+
+def do_remove_file(args: argparse.Namespace) -> int:
+    """Attempt to rm a file."""
+    try:
+        action = _current_action()
+        json_parms = json.loads(args.parms)
+        path = json_parms.get("path")
+        if not path:
+            raise ValueError("Missing 'path' parameter in JSON input.")
+        
+        CMD = f"sudo rm {path}"
+        run_command_on_remote(args, CMD)
+        package = _package_results("success", "Removed file.", 
+                                   action, {"path": path})
+    except Exception as e:
+        package = _package_results("error", f"Failed to remove file: {e}", action, {})
+
+    return package
 
 def do_collect_modified_files(args: argparse.Namespace) -> int:
     """Get a list of modified files from the remote host."""
@@ -283,6 +304,14 @@ def _build_parser(action_names: list[str]) -> argparse.ArgumentParser:
         choices=sorted(action_names),
         help="Action keyword. Dispatches to the matching do_<keyword> function.",
     )
+    parser.add_argument(
+        "--parms",
+        required=False,
+        type=str,
+        default="{}",
+        help="JSON Action parameters.",
+    )
+
     return parser
 
 

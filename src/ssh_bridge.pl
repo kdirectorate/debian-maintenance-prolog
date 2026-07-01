@@ -11,15 +11,10 @@
 :- module(ssh_bridge, [
     sync_facts_from_remote/3,
     actually_remove_kernels/1,
-    actually_remove_temp_files/1,
+    actually_remove_temp_file/4,
     actually_remove_log_files/1,
     test_create_data/3,
-    actually_remove_apt_packages/0,
-    temp_file/3,
-    running_kernel/1,
-    installed_kernel/1,
-    autoremove_candidate/1,
-    modified_file/2
+    actually_remove_apt_packages/0
     ]).
 
 :- use_module(library(process)).
@@ -27,14 +22,10 @@
 :- use_module(library(lists)).
 
 :- use_module(process_utils).
+:- use_module('src/context').
 
-% Dynamic predicates to hold the running and installed kernels on the remote system
-% They start empty; we will retractall + assertz every time we sync.
-:- dynamic running_kernel/1.
-:- dynamic installed_kernel/1.
-:- dynamic temp_file/3.  % temp_file(Path, SizeMB, AgeDays)
-:- dynamic autoremove_candidate/1.  % autoremove_candidate(PackageName)
-:- dynamic modified_file/2.  % modified_file(Path, Timestamp)
+% Remote system facts live in src/context.pl — imported via use_module above.
+% ssh_bridge asserts into them; other modules query them from context directly.
 
 actually_remove_apt_packages() :-
     true. % TODO: implement the actual removal logic
@@ -42,8 +33,11 @@ actually_remove_apt_packages() :-
 actually_remove_log_files(_LogFiles) :-
     true. % TODO: implement the actual removal logic
 
-actually_remove_temp_files(_TempFiles) :-
-    true. % TODO: implement the actual removal logic
+actually_remove_temp_file(Host, Port, User, temp_file(Path, _, _)) :-
+    py_remote_executor(Host, Port, User, 
+        "remove_file", _{path: Path}, 
+        Response
+    ).
 
 actually_remove_kernels(_Kernels) :-
     true. % TODO: implement the actual removal logic
@@ -210,9 +204,43 @@ test_create_temp_files(Host, Port, User) :-
         fail
     ).
 
-%% py_remote_executor(+Host, +Port, +User, +Action, -Response) is det.
+% -----------------------------------------------------------------------
+% py_remote_executor
 % Calls the Python helper with the given action and returns a Prolog dict
 % representing the JSON response. Fails with a message if the Python helper fails.
+% -----------------------------------------------------------------------
+
+%% py_remote_executor(+Host, +Port, +User, +Action, +Parms, -Response) is det.
+py_remote_executor(Host, Port, User, Action, Parms, Response) :-
+
+    % Convert the Parms dict to a JSON string
+    with_output_to(string(ParmsString),
+        json_write_dict(current_output, Parms, [])),
+
+    process_utils:call_python(
+        ['python/remote_executor.py', 
+        '--host', Host, '--port', Port, '--user', User, '--action', Action,
+        '--parms', ParmsString],
+        Output,
+        Status
+    ),
+    (   parse_remote_response(Output, Response)
+    ->  (   Status = exit(0)
+        ->  check_remote_success(Response)
+        ;   format('[ERR] 1 Python helper failed with status: ~w~n', [Status]),
+            catch(format('~w~n', [Response.message]), _, true),
+            fail
+        )
+    ;   format('[ERR] Failed to parse response~n', []),
+        (   Status = exit(0) -> true
+        ;   format('[ERR] 2 Python helper failed with status: ~w~n', [Status]),
+            catch(format('~w~n', [Output]), _, true)
+        ),
+        fail
+    ).
+
+
+%% py_remote_executor(+Host, +Port, +User, +Action, -Response) is det.
 py_remote_executor(Host, Port, User, Action, Response) :-
     process_utils:call_python(
         ['python/remote_executor.py', '--host', Host, '--port', Port, '--user', User, '--action', Action],
