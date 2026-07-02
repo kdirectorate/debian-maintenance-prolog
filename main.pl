@@ -15,6 +15,7 @@
 
 :- use_module('config/default_policy').
 :- use_module('src/context').
+
 :- use_module('src/ssh_bridge').
 :- use_module('src/kernel_cleaner').
 :- use_module('src/temp_cleanup').
@@ -22,7 +23,6 @@
 :- use_module('src/apt_maintainer').
 :- use_module('src/security_scanner').
 :- use_module('src/report_generator').
-
 
 
 /* Teaching note (debugging helper):
@@ -58,15 +58,32 @@ show_banner :-
 */
 
 make_changes:-
+    confirm_action('maintenance actions'),
     target_host(Host),
     target_port(Port),
     target_user(User),
+
+    % Remove apt packages that are marked for autoremove
+    findall(P, autoremove_candidate(P), Packages),
+    ( Packages == [] ->
+        format('~n[INFO] No apt packages to remove.~n')
+    ; actually_remove_apt_packages(Host, Port, User, Packages),
+      format('~n[INFO] All marked apt packages removed.~n')
+    ),
+
+    % Purge old kernels
+    findall(K, removable_kernel(K), Kernels),
+    ( Kernels == [] ->
+        format('~n[INFO] No kernels to purge.~n')
+    ; actually_remove_kernels(Host, Port, User, Kernels),
+      format('~n[INFO] All marked kernels purged.~n')
+    ),
+
+    % Remove temp files that are marked for deletion
     deleteable_temp_files(FilesToDelete),
     ( FilesToDelete == [] ->
         format('~n[INFO] No temp files to delete.~n')
-    ; confirm_action('maintenance actions'),
-    
-        forall(
+    ; forall(
             member(F, FilesToDelete), 
             actually_remove_temp_file(Host, Port, User, F)
         ),
@@ -83,6 +100,11 @@ confirm_action(Description) :-
     ->  true
     ;   format('Action aborted by user.~n'), fail
     ).
+
+removable_kernel(K) :-
+    installed_kernel(K),
+    running_kernel(Running),
+    K \= Running.
 
 parse_options([], Opts, Opts).
 parse_options(['-h' | T], Acc, Opts) :-
@@ -149,7 +171,7 @@ main(Argv) :-
     % Gather system state from synced facts and generate the report
     running_kernel(Running),
     findall(K, installed_kernel(K), Installed),
-    findall(K, removable_kernel(Running, Installed, K), SafeKernels),
+    findall(K, removable_kernel(K), SafeKernels),
     findall(P, autoremove_candidate(P), AutoremoveCandidates),
     findall(temp_file(P, S, A),
         (temp_file(P, S, A),

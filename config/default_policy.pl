@@ -10,6 +10,7 @@
     default_target_port/1,
     default_target_user/1,
     critical_file/1,
+    suspicious_process/1,
     report_file/1
 ]).
 
@@ -48,3 +49,48 @@ critical_file('/etc/ssh/ssh_config').
 standard_root_user(root).
 standard_root_user(toor).
 
+% Process basenames that are rarely legitimate on a production server
+% (matched against ps output; extend as your environment requires)
+
+% Network reconnaissance and raw socket tooling
+suspicious_process('netcat').
+suspicious_process('nc').
+suspicious_process('ncat').
+suspicious_process('nmap').
+suspicious_process('masscan').
+suspicious_process('hping3').
+suspicious_process('nikto').
+suspicious_process('pwncat').
+
+% Reverse shells, tunneling, and C2 plumbing
+suspicious_process('socat').
+suspicious_process('cryptcat').
+suspicious_process('ngrok').
+suspicious_process('iodine').
+suspicious_process('chisel').
+suspicious_process('frpc').
+suspicious_process('frps').
+suspicious_process('ligolo').
+suspicious_process('cobaltstrike').
+
+% Brute-force and credential attacks
+suspicious_process('hydra').
+suspicious_process('medusa').
+suspicious_process('john').
+suspicious_process('hashcat').
+
+% Cryptominers and known miner malware names
+suspicious_process('xmrig').
+suspicious_process('minerd').
+suspicious_process('cpuminer').
+suspicious_process('kdevtmpfsi').
+suspicious_process('kinsing').
+
+% Exploitation frameworks and injection tooling
+suspicious_process('msfvenom').
+suspicious_process('sqlmap').
+
+% Post-exploitation enumeration (often dropped into /tmp)
+suspicious_process('linpeas').
+suspicious_process('linenum').
+suspicious_process('pspy').

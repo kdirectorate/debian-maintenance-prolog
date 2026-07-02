@@ -103,6 +103,56 @@ def get_remote_directory(args: argparse.Namespace, path: str) -> dict:
 # user passes on the command line.
 # ---------------------------------------------------------------------------
 
+
+# ---------------------------------------------------------------------------
+# ACTION: purge unused kernels
+# ---------------------------------------------------------------------------
+def do_purge_kernels(args: argparse.Namespace) -> int:
+    try:
+        action = _current_action()
+        json_parms = json.loads(args.parms)
+        kernels = json_parms.get("kernels")
+        if not kernels:
+            raise ValueError("Missing 'kernels' parameter in JSON input.")
+        
+        for kernel in kernels:
+            CMD = f"sudo apt purge -y linux-image-{kernel}"
+            sys.stderr.write(f"[DEBUG] Running command on remote {args.host}:{args.port}]: {CMD}\n")
+            run_command_on_remote(args, CMD)
+        
+        CMD = "sudo update-grub"
+        run_command_on_remote(args, CMD)
+
+        package = _package_results("success", "Purged unused kernels.", 
+                                   action, {"kernels": kernels})
+    except Exception as e:
+        package = _package_results("error", f"Failed to purge unused kernels: {e}", action, {})
+
+    return package
+
+
+# ----------------------------------------------------------------------------
+# ACTION: Modify the remote host
+# ----------------------------------------------------------------------------
+def do_remove_packages(args: argparse.Namespace) -> int:
+    """Attempt to remove a package."""
+    try:
+        action = _current_action()
+        json_parms = json.loads(args.parms)
+        packages = json_parms.get("packages")
+        if not packages:
+            raise ValueError("Missing 'packages' parameter in JSON input.")
+        
+        CMD = f"sudo apt-get remove -y {" ".join(packages)}"
+        run_command_on_remote(args, CMD)
+        package = _package_results("success", "Removed package.", 
+                                   action, {"packages": packages})
+    except Exception as e:
+        package = _package_results("error", f"Failed to remove package: {e}", action, {})
+
+    return package
+
+
 def do_remove_file(args: argparse.Namespace) -> int:
     """Attempt to rm a file."""
     try:
@@ -118,6 +168,97 @@ def do_remove_file(args: argparse.Namespace) -> int:
                                    action, {"path": path})
     except Exception as e:
         package = _package_results("error", f"Failed to remove file: {e}", action, {})
+
+    return package
+
+# ---------------------------------------------------------------------------
+# RECON: Get information from the remote host
+# ---------------------------------------------------------------------------
+def do_get_remote_sockets(args: argparse.Namespace) -> int:
+    """Get a list of open sockets from the remote host."""
+    try:
+        CMD = "sudo ss -tulnpe"
+        action = _current_action()
+        result = run_command_on_remote(args, CMD)
+        socks = []
+        for i, line in enumerate(result.stdout.strip().splitlines()):
+            line = line.strip()
+            if not line: continue
+            if i == 0 and line.startswith('Netid'): continue
+            parts = line.split(maxsplit=6)
+            if len(parts) < 6: continue
+            local = parts[4]
+            peer = parts[5]
+            la, lp = local.rsplit(':', 1) if ':' in local else (local, '')
+            pa, pp = peer.rsplit(':', 1) if ':' in peer else (peer, '')
+            proc = parts[6] if len(parts) > 6 else ''
+            pid = None
+            name = None
+            if 'pid=' in proc:
+                s = proc.find('pid=') + 4
+                e = proc.find(',', s)
+                if e == -1: e = len(proc)
+                try: pid = int(proc[s:e])
+                except: pass
+            if '(("' in proc:
+                s = proc.find('("') + 2
+                e = proc.find('"', s)
+                if e > s: name = proc[s:e]
+            socks.append({
+                'netid': parts[0],
+                'state': parts[1],
+                'recv_q': int(parts[2]),
+                'send_q': int(parts[3]),
+                'local_address': la,
+                'local_port': lp,
+                'peer_address': pa,
+                'peer_port': pp,
+                'process': proc,
+                'pid': pid,
+                'name': name
+            })
+
+        package = _package_results("success", "Ports collected successfully", 
+                                   action, {"sockets": socks})
+    except Exception as e:
+        package = _package_results("error", f"Failed to collect ports: {e}", action, {})
+
+    return package
+
+def do_get_remote_processes(args: argparse.Namespace) -> int:
+    """Get a list of processes from the remote host."""
+    try:
+        CMD = "ps -eo pid,ppid,uid,user,pcpu,pmem,vsz,rss,tty,stat,start_time,time,cmd --no-headers"
+        action = _current_action()
+        result = run_command_on_remote(args, CMD)
+
+        procs = []
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if not line: continue
+            parts = line.split(None, 12)
+            if len(parts) != 13: continue
+            procs.append({
+                'pid': int(parts[0]),
+                'ppid': int(parts[1]),
+                'uid': int(parts[2]),
+                'user': parts[3],
+                'pcpu': float(parts[4]),
+                'pmem': float(parts[5]),
+                'vsz': int(parts[6]),
+                'rss': int(parts[7]),
+                'tty': parts[8],
+                'stat': parts[9],
+                'start_time': parts[10],
+                'time': parts[11],
+                'cmd': parts[12]
+            })
+
+        package = _package_results("success", "Processes collected successfully", 
+                                   action, {"processes": procs})
+        
+    except Exception as e:
+        package = _package_results("error", f"Failed to collect processes: {e}", action, {})
 
     return package
 
@@ -175,8 +316,12 @@ def do_collect_kernels(args: argparse.Namespace) -> int:
         # Parse the running kernel name and the list of installed kernels from the command output.
         data = {
             "notes": notes,
-            "running_kernel": "linux-image-" + result.stdout.splitlines()[0],
-            "installed_kernels": [line for line in result.stdout.splitlines()[2:] if line.startswith("linux-image-")],
+            "running_kernel": result.stdout.splitlines()[0],
+            "installed_kernels": [
+                line.removeprefix("linux-image-")
+                for line in result.stdout.splitlines()[2:]
+                if line.startswith("linux-image-")
+            ],
         }
         package = _package_results("success", "Kernels collected successfully", action, data)
     except Exception as e:
@@ -212,6 +357,26 @@ def do_collect_apt_autoremove(args: argparse.Namespace) -> int:
 # Creates test files on the server that can later be acted upon by the app.
 # ONLY USE IN TEST, not PROD.
 # ---------------------------------------------------------------------------
+
+def do_t_start_test_processes(args: argparse.Namespace) -> int:
+    try:
+        CMDs = [
+            "pkill sleep",
+            # "bash -c 'exec -a /bin/bash -c \"while true; do sleep 1000; done\" &'",
+            "nohup bash -c 'exec -a nc sleep infinity' >/dev/null 2>&1 < /dev/null &",
+            "nohup bash -c 'exec -a pwncat sleep infinity' >/dev/null 2>&1 < /dev/null &",
+            "nohup bash -c 'exec -a cobaltstrike sleep infinity' >/dev/null 2>&1 < /dev/null &"
+        ]
+        action = _current_action()
+
+        for cmd in CMDs:
+            run_command_on_remote(args, cmd)
+
+        package = _package_results("success", "Test processes created", action, {})
+    except Exception as e:
+        package = _package_results("error", f"Failed creating test processes: {e}", action, {})
+
+    return package
 
 def do_t_tamper_critical_files(args: argparse.Namespace) -> int:
     try:

@@ -10,8 +10,10 @@
 ]).
 
 :- use_module(library(lists)).
+:- use_module(library(pcre)).
+
+
 :- use_module('config/default_policy').   % thresholds & whitelists live here
-%:- use_module('src/facts').  % for listening_port/2, failed_login/3, modified_file/2, process/4, user_account/3
 :- use_module('src/context').             % for modified_file/2 and other remote facts
 
 % ============================================================
@@ -22,11 +24,11 @@ collect_findings(Findings) :-
     %collect_port_findings(PortFindings),
     %collect_brute_force_findings(BruteFindings),
     collect_file_mod_findings(FileFindings),
-    %collect_suspicious_process_findings(ProcFindings),
+    collect_suspicious_process_findings(ProcFindings),
     %collect_uid0_findings(UID0Findings),
     %append([PortFindings, BruteFindings, FileFindings, ProcFindings, UID0Findings],
     %       Unsorted),
-    append([FileFindings], Unsorted),  % only file mod findings for now
+    append([FileFindings, ProcFindings], Unsorted),  % only file mod findings for now
     sort(Unsorted, Findings).   % remove any accidental duplicates
 
 
@@ -112,12 +114,24 @@ check_recent_critical_mod(What, high, Evidence, Recommendation) :-
 % ============================================================
 
 check_suspicious_process(What, high, Evidence, Recommendation) :-
-    process(PID, root, Cmdline, ExePath),
-    suspicious_exe_location(ExePath),
-    format(atom(What), 'Root-owned process ~w (PID ~w) running from suspicious location', [Cmdline, PID]),
-    Evidence = process(PID, root, Cmdline, ExePath),
+    process(PID, _, _, User, _, _, _, _, _, _, _, _, Cmd),
+    suspicious_exe_location(Cmd),  % check if the command is running from a suspicious location
+    format(atom(What), 'Process ~w (PID ~w) running from suspicious location', [Cmd, PID]),
+    Evidence = suspect_process(PID, User, Cmd),
     Recommendation = 'Investigate immediately with: ps auxfww, lsof -p <PID>, and cat /proc/<PID>/exe. Kill only after confirmation. This is a classic sign of privilege escalation or malware.'.
 
+check_suspicious_process(What, high, Evidence, Recommendation) :-
+    process(PID, _, _, User, _, _, _, _, _, _, _, _, Cmd),
+    suspicious_process(Suspicious),
+    atomic_list_concat(['\\b', Suspicious, '\\b'], Pattern),
+    re_match(Pattern, Cmd, []),
+    format(atom(What), 'Process ~w (PID ~w) contains suspicious token ~w',
+           [Cmd, PID, Suspicious]),
+    Evidence = suspect_process(PID, User, Cmd),
+    Recommendation = 'Investigate immediately with: ps auxfww, lsof -p <PID>, and cat /proc/<PID>/exe. Kill only after confirmation. This is a classic sign of privilege escalation or malware.'.
+
+% TODO: add /dev/shm, /dev/mqueue, /var/run, and other tmpfs locations to suspicious_exe_location/1
+% TODO: Move this to default_policy.pl and make it configurable, so users can add their own suspicious locations.
 suspicious_exe_location(ExePath) :-
     ( sub_atom(ExePath, 0, _, _, '/tmp/')
     ; sub_atom(ExePath, 0, _, _, '/var/tmp/')
