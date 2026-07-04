@@ -25,7 +25,7 @@ collect_findings(Findings) :-
     %collect_brute_force_findings(BruteFindings),
     collect_file_mod_findings(FileFindings),
     collect_suspicious_process_findings(ProcFindings),
-    %collect_uid0_findings(UID0Findings),
+    collect_uid0_findings(UID0Findings),
     %append([PortFindings, BruteFindings, FileFindings, ProcFindings, UID0Findings],
     %       Unsorted),
     append([FileFindings, ProcFindings, PortFindings], Unsorted),  % only include the checks that are implemented
@@ -63,31 +63,34 @@ collect_uid0_findings(Findings) :-
 % ============================================================
 
 check_unexpected_port(What, Severity, Evidence, Recommendation) :-
-    open_port(Netid, State, _, _, _, LocalPort, _, _, _, _, _),
+    % open_port(Netid, State, RecvQ, SendQ, LocalAddress, LocalPort, PeerAddress, PeerPort, Process, PID, Name)
+    open_port(Netid, State, _, _, _, LocalPort, LocalAddress, _, _, _, _),
 
     % only consider ports that are actually listening
     State = "LISTEN",
 
     % normalize the data types so we can compare against the policy facts
     number_string(IntPort, LocalPort),
-    atom_string(NetidAtom, Netid),
-
+    
     % exclude any ports that are expected according to the policy facts
-    \+ expected_listening_port(IntPort, NetidAtom),           % ← negation as failure
-    classify_port_severity(IntPort, NetidAtom, Severity),
+    \+ expected_listening_port(IntPort, Netid),           % ← negation as failure
+    classify_port_severity(IntPort, Netid, LocalAddress, Severity),
 
-    format(atom(What), 'Unexpected listening ~w port ~w', [NetidAtom, IntPort]),
-    Evidence = listening_port(IntPort, NetidAtom),
+    format(atom(What), 'Unexpected listening ~w port ~w', [Netid, IntPort]),
+    Evidence = listening_port(IntPort, Netid),
     Recommendation = 'Run: ss -tuln | grep LISTEN and journalctl -u <service>. If legitimate, add it to expected_listening_port/2 in policy or default_policy.pl. Consider firewall rules.'.
 
 % Green cut used here to make classification deterministic
-classify_port_severity(Port, _Proto, high) :-
+classify_port_severity(Port, _Proto, _LocalAddress, high) :-
     Port > 32768,          % high-numbered ephemeral ports are common backdoor locations
     !.
-classify_port_severity(Port, tcp, medium) :-
+classify_port_severity(_Port, _Proto, LocalAddress, low) :-
+    (   LocalAddress == "127.0.0.1" ; LocalAddress == "::1" ),  % only listening on localhost
+    !.
+classify_port_severity(Port, tcp, _LocalAddress, medium) :-
     Port > 1024,           % non-privileged port
     !.
-classify_port_severity(Port, _, low).
+classify_port_severity(_Port, _Proto, _LocalAddress, low).
 
 % ============================================================
 

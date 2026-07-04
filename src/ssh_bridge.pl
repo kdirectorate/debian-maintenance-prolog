@@ -99,13 +99,21 @@ collect_remote_sockets(Host, Port, User, Sockets) :-
 json_to_open_port(Dict, [Netid, State, RecvQ, SendQ, LocalAddress, 
     LocalPort, PeerAddress, PeerPort, Process, PID, Name]) :-
     
-    Netid = Dict.netid,
+    %Netid = Dict.netid,
+    % normalize the data types so we can compare against the policy facts
+    atom_string(Netid, Dict.netid),
+
     State = Dict.state,
     RecvQ = Dict.recv_q,
     SendQ = Dict.send_q,
     LocalAddress = Dict.local_address,
+
+    % We can't normalize ports here because sometimes they're integers
+    % and somtimes not. Check the output of the bash command "ss -tuln" 
+    % on your system to see what it looks like.
     LocalPort = Dict.local_port,
     PeerAddress = Dict.peer_address,
+    % Same note as above
     PeerPort = Dict.peer_port,
     Process = Dict.process,
     PID = Dict.pid,

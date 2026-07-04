@@ -169,8 +169,6 @@ main(Argv) :-
     sync_facts_from_remote(Host, Port, User),
     
     % Gather system state from synced facts and generate the report
-    running_kernel(Running),
-    findall(K, installed_kernel(K), Installed),
     findall(K, removable_kernel(K), SafeKernels),
     findall(P, autoremove_candidate(P), AutoremoveCandidates),
     findall(temp_file(P, S, A),
