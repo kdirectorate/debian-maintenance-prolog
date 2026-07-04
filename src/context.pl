@@ -19,7 +19,7 @@
     modified_file/2,
     deleteable_temp_files/1,
     process/13,
-    listening_port/11,
+    open_port/11,
     suspicious_process/1,
     run_mode/1
 ]).
@@ -38,7 +38,7 @@
 :- dynamic temp_file/3.           % temp_file(Path, SizeMB, AgeDays)
 :- dynamic autoremove_candidate/1. % autoremove_candidate(PackageName)
 :- dynamic modified_file/2.       % modified_file(Path, Timestamp)
-:- dynamic listening_port/11.      % listening_port(Netid, State, RecvQ, SendQ, LocalAddress, LocalPort, PeerAddress, PeerPort, Process, PID, Name)
+:- dynamic open_port/11.          % open_port(Netid, State, RecvQ, SendQ, LocalAddress, LocalPort, PeerAddress, PeerPort, Process, PID, Name)
 :- dynamic process/13.             % process(PID, PPID, UID, User, PCPU, PMEM, VSZ, RSS, TTY, Stat, StartTime, Time, Cmd)
 
 % Synthizized facts based on rules from the sync'd facts.

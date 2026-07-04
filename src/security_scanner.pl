@@ -21,14 +21,14 @@
 % ============================================================
 
 collect_findings(Findings) :-
-    %collect_port_findings(PortFindings),
+    collect_port_findings(PortFindings),
     %collect_brute_force_findings(BruteFindings),
     collect_file_mod_findings(FileFindings),
     collect_suspicious_process_findings(ProcFindings),
     %collect_uid0_findings(UID0Findings),
     %append([PortFindings, BruteFindings, FileFindings, ProcFindings, UID0Findings],
     %       Unsorted),
-    append([FileFindings, ProcFindings], Unsorted),  % only file mod findings for now
+    append([FileFindings, ProcFindings, PortFindings], Unsorted),  % only include the checks that are implemented
     sort(Unsorted, Findings).   % remove any accidental duplicates
 
 
@@ -63,12 +63,22 @@ collect_uid0_findings(Findings) :-
 % ============================================================
 
 check_unexpected_port(What, Severity, Evidence, Recommendation) :-
-    listening_port(Port, Proto),
-    \+ expected_listening_port(Port, Proto),           % ← negation as failure
-    classify_port_severity(Port, Proto, Severity),
-    format(atom(What), 'Unexpected listening ~w port ~w', [Proto, Port]),
-    Evidence = listening_port(Port, Proto),
-    Recommendation = 'Run: ss -tuln | grep LISTEN  and  journalctl -u <service>. If legitimate, add it to expected_listening_port/2 in policy or default_policy.pl. Consider firewall rules.'.
+    open_port(Netid, State, _, _, _, LocalPort, _, _, _, _, _),
+
+    % only consider ports that are actually listening
+    State = "LISTEN",
+
+    % normalize the data types so we can compare against the policy facts
+    number_string(IntPort, LocalPort),
+    atom_string(NetidAtom, Netid),
+
+    % exclude any ports that are expected according to the policy facts
+    \+ expected_listening_port(IntPort, NetidAtom),           % ← negation as failure
+    classify_port_severity(IntPort, NetidAtom, Severity),
+
+    format(atom(What), 'Unexpected listening ~w port ~w', [NetidAtom, IntPort]),
+    Evidence = listening_port(IntPort, NetidAtom),
+    Recommendation = 'Run: ss -tuln | grep LISTEN and journalctl -u <service>. If legitimate, add it to expected_listening_port/2 in policy or default_policy.pl. Consider firewall rules.'.
 
 % Green cut used here to make classification deterministic
 classify_port_severity(Port, _Proto, high) :-
@@ -77,9 +87,10 @@ classify_port_severity(Port, _Proto, high) :-
 classify_port_severity(Port, tcp, medium) :-
     Port > 1024,           % non-privileged port
     !.
-classify_port_severity(_, _, low).
+classify_port_severity(Port, _, low).
 
 % ============================================================
+
 % CHECK 2: Brute-force login attempts (aggregation + threshold)
 % ============================================================
 
@@ -123,7 +134,7 @@ check_suspicious_process(What, high, Evidence, Recommendation) :-
 check_suspicious_process(What, high, Evidence, Recommendation) :-
     process(PID, _, _, User, _, _, _, _, _, _, _, _, Cmd),
     suspicious_process(Suspicious),
-    atomic_list_concat(['\\b', Suspicious, '\\b'], Pattern),
+    atomic_list_concat(['\\b', Suspicious, '\\b'], Pattern), 
     re_match(Pattern, Cmd, []),
     format(atom(What), 'Process ~w (PID ~w) contains suspicious token ~w',
            [Cmd, PID, Suspicious]),

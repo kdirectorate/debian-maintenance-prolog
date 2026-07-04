@@ -52,23 +52,35 @@ def _package_results(status: str, message: str, action: str, data: dict) -> dict
         "data": data
     }
 
-# Helper to run a command on the remote host
-def run_command_on_remote(args: argparse.Namespace, cmd: str) -> dict:
-    """Run a command on the remote host and return the result as a package."""
-
+def connect_to_remote(args: argparse.Namespace) -> Connection:
+    """Establish an SSH connection to the remote host."""
     user = args.user or "root"
     connect_kwargs = {"allow_agent": True, "look_for_keys": True}
     if args.key is not None:
         connect_kwargs["key_filename"] = str(args.key)
 
-    result = Connection(
+    return Connection(
         host=args.host,
         port=args.port,
         user=user,
         connect_kwargs=connect_kwargs,
-    ).run(cmd, hide=True, warn=True)
+    )
 
-    return result
+# Helper to run a command on the remote host
+def run_command_on_remote(args: argparse.Namespace, cmd: str, conn: Connection = None) -> dict:
+    """Run a command on the remote host and return the result as a package."""
+
+    if conn is None:
+        conn = connect_to_remote(args)
+    with (conn if conn is not None else connect_to_remote(args)) as conn:
+        user = args.user or "root"
+        connect_kwargs = {"allow_agent": True, "look_for_keys": True}
+        if args.key is not None:
+            connect_kwargs["key_filename"] = str(args.key)
+
+        result = conn.run(cmd, hide=True, warn=True)
+
+        return result
 
 def get_remote_time(args: argparse.Namespace) -> float:
     """Get the current time on the remote host in seconds since the epoch."""
@@ -76,13 +88,13 @@ def get_remote_time(args: argparse.Namespace) -> float:
     result = run_command_on_remote(args, CMD)
     return float(result.stdout.strip())
 
-def get_remote_directory(args: argparse.Namespace, path: str) -> dict:
+def get_remote_directory(args: argparse.Namespace, path: str, conn: Connection = None) -> dict:
     """Get file size and modification time files on the remote host."""
 
     current_remote_time = get_remote_time(args)
 
     CMD = f"sudo find {path} -type f -mtime -30 -printf '%p\t%s\t%T@\n'"
-    result = run_command_on_remote(args, CMD)
+    result = run_command_on_remote(args, CMD, conn)
     files = []
     for line in result.stdout.splitlines():
         if line.startswith(path):
@@ -115,13 +127,15 @@ def do_purge_kernels(args: argparse.Namespace) -> int:
         if not kernels:
             raise ValueError("Missing 'kernels' parameter in JSON input.")
         
-        for kernel in kernels:
-            CMD = f"sudo apt purge -y linux-image-{kernel}"
-            sys.stderr.write(f"[DEBUG] Running command on remote {args.host}:{args.port}]: {CMD}\n")
-            run_command_on_remote(args, CMD)
-        
-        CMD = "sudo update-grub"
-        run_command_on_remote(args, CMD)
+        with connect_to_remote(args) as conn:
+
+            for kernel in kernels:
+                CMD = f"sudo apt purge -y linux-image-{kernel}"
+                sys.stderr.write(f"[DEBUG] Running command on remote {args.host}:{args.port}]: {CMD}\n")
+                run_command_on_remote(args, CMD, conn)
+            
+            CMD = "sudo update-grub"
+            run_command_on_remote(args, CMD, conn)
 
         package = _package_results("success", "Purged unused kernels.", 
                                    action, {"kernels": kernels})
@@ -194,6 +208,7 @@ def do_get_remote_sockets(args: argparse.Namespace) -> int:
             proc = parts[6] if len(parts) > 6 else ''
             pid = None
             name = None
+
             if 'pid=' in proc:
                 s = proc.find('pid=') + 4
                 e = proc.find(',', s)
@@ -205,7 +220,7 @@ def do_get_remote_sockets(args: argparse.Namespace) -> int:
                 e = proc.find('"', s)
                 if e > s: name = proc[s:e]
             socks.append({
-                'netid': parts[0],
+                'netid': parts[0].lower(),
                 'state': parts[1],
                 'recv_q': int(parts[2]),
                 'send_q': int(parts[3]),
@@ -264,45 +279,49 @@ def do_get_remote_processes(args: argparse.Namespace) -> int:
 
 def do_collect_modified_files(args: argparse.Namespace) -> int:
     """Get a list of modified files from the remote host."""
-    try:
-        DIRS = [
-            "/etc", "/bin", "/usr/bin", 
-            "/usr/local/etc", "/usr/local/bin", "/usr/local/sbin"
-        ]
 
-        action = _current_action()
-        modified_files = []
-        for dir in DIRS:
-            files = get_remote_directory(args, dir)
-            modified_files.extend(files)
+    with connect_to_remote(args) as conn:
+        try:
+            DIRS = [
+                "/etc", "/bin", "/usr/bin", 
+                "/usr/local/etc", "/usr/local/bin", "/usr/local/sbin"
+            ]
 
-        package = _package_results("success", "Modified files collected successfully", 
-                                   action, {"modified_files": modified_files})
-    except Exception as e:
-        package = _package_results("error", f"Failed to collect modified files: {e}", action, {})
+            action = _current_action()
+            modified_files = []
+            for dir in DIRS:
+                files = get_remote_directory(args, dir)
+                modified_files.extend(files)
 
-    return package
+            package = _package_results("success", "Modified files collected successfully", 
+                                    action, {"modified_files": modified_files})
+        except Exception as e:
+            package = _package_results("error", f"Failed to collect modified files: {e}", action, {})
+
+        return package
 
 def do_collect_temp_files(args: argparse.Namespace) -> int:
     """Get a list of temporary files from the remote host."""
-    try:
-        action = _current_action()
-        DIRS = [
-            "/tmp", "/var/tmp"
-        ]
 
-        action = _current_action()
-        temp_files = []
-        for dir in DIRS:
-            files = get_remote_directory(args, dir)
-            temp_files.extend(files)
+    with connect_to_remote(args) as conn:
+        try:
+            action = _current_action()
+            DIRS = [
+                "/tmp", "/var/tmp"
+            ]
 
-        package = _package_results("success", "Temporary files collected successfully", 
-                                   action, {"temp_files": temp_files})
-    except Exception as e:
-        package = _package_results("error", f"Failed to collect temporary files : {e}", action, {})
+            action = _current_action()
+            temp_files = []
+            for dir in DIRS:
+                files = get_remote_directory(args, dir, conn)
+                temp_files.extend(files)
 
-    return package
+            package = _package_results("success", "Temporary files collected successfully", 
+                                    action, {"temp_files": temp_files})
+        except Exception as e:
+            package = _package_results("error", f"Failed to collect temporary files : {e}", action, {})
+
+        return package
         
 def do_collect_kernels(args: argparse.Namespace) -> int:
     """Get kernel information from the remote host."""
@@ -359,77 +378,85 @@ def do_collect_apt_autoremove(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 def do_t_start_test_processes(args: argparse.Namespace) -> int:
-    try:
-        CMDs = [
-            "pkill sleep",
-            # "bash -c 'exec -a /bin/bash -c \"while true; do sleep 1000; done\" &'",
-            "nohup bash -c 'exec -a nc sleep infinity' >/dev/null 2>&1 < /dev/null &",
-            "nohup bash -c 'exec -a pwncat sleep infinity' >/dev/null 2>&1 < /dev/null &",
-            "nohup bash -c 'exec -a cobaltstrike sleep infinity' >/dev/null 2>&1 < /dev/null &"
-        ]
-        action = _current_action()
 
-        for cmd in CMDs:
-            run_command_on_remote(args, cmd)
+    with connect_to_remote(args) as conn:
+        try:
+            CMDs = [
+                "pkill sleep",
+                # "bash -c 'exec -a /bin/bash -c \"while true; do sleep 1000; done\" &'",
+                "nohup bash -c 'exec -a nc sleep infinity' >/dev/null 2>&1 < /dev/null &",
+                "nohup bash -c 'exec -a pwncat sleep infinity' >/dev/null 2>&1 < /dev/null &",
+                "nohup bash -c 'exec -a cobaltstrike sleep infinity' >/dev/null 2>&1 < /dev/null &"
+            ]
+            action = _current_action()
 
-        package = _package_results("success", "Test processes created", action, {})
-    except Exception as e:
-        package = _package_results("error", f"Failed creating test processes: {e}", action, {})
+            for cmd in CMDs:
+                run_command_on_remote(args, cmd, conn)
 
-    return package
+            package = _package_results("success", "Test processes created", action, {})
+        except Exception as e:
+            package = _package_results("error", f"Failed creating test processes: {e}", action, {})
+
+        return package
 
 def do_t_tamper_critical_files(args: argparse.Namespace) -> int:
-    try:
-        CMDs = [
-            """sudo touch -d "2 days ago" /etc/passwd""",
-        ]
-        action = _current_action()
+    with connect_to_remote(args) as conn:
+        try:
+            CMDs = [
+                """sudo touch -d "2 days ago" /etc/passwd""",
+            ]
+            action = _current_action()
 
-        for cmd in CMDs:
-            run_command_on_remote(args, cmd)
+            for cmd in CMDs:
+                run_command_on_remote(args, cmd, conn)
 
-        package = _package_results("success", "Tampered with critical files", action, {})
-    except Exception as e:
-        package = _package_results("error", f"Failed tampering with critical files: {e}", action, {})
+            package = _package_results("success", "Tampered with critical files", action, {})
+        except Exception as e:
+            package = _package_results("error", f"Failed tampering with critical files: {e}", action, {})
 
-    return package
+        return package
 
 def do_t_create_tmp_files(args: argparse.Namespace) -> int:
-    try:
-        CMDs = [
-            "fallocate -l 7M  /tmp/test_temp_7mb_expired",
-            "fallocate -l 20M /tmp/test_temp_20mb_expired",
-            "fallocate -l 20M /tmp/test_temp_20mb_current",
-            "touch -d '7 days ago' /tmp/test_temp_7mb_expired /tmp/test_temp_20mb_expired",
-            "touch -d '1 day ago' /tmp/test_temp_20mb_current",
-        ]
-        action = _current_action()
+    with connect_to_remote(args) as conn:
+        try:
+            CMDs = [
+                "fallocate -l 7M  /tmp/test_temp_7mb_expired",
+                "fallocate -l 20M /tmp/test_temp_20mb_expired",
+                "fallocate -l 20M /tmp/test_temp_20mb_current",
+                "touch -d '7 days ago' /tmp/test_temp_7mb_expired /tmp/test_temp_20mb_expired",
+                "touch -d '1 day ago' /tmp/test_temp_20mb_current",
+            ]
+                
+            action = _current_action()
 
-        for cmd in CMDs:
-            run_command_on_remote(args, cmd)
-        package = _package_results("success", "Test /tmp files created", action, {})
-    except Exception as e:
-        package = _package_results("error", f"Failed creating /tmp files: {e}", action, {})
+            for cmd in CMDs:
+                run_command_on_remote(args, cmd, conn)
+            package = _package_results("success", "Test /tmp files created", action, {})
+        
+        except Exception as e:
+            package = _package_results("error", f"Failed creating /tmp files: {e}", action, {})
 
-    return package
+        return package
 
 def do_t_create_apt_dependencies(args: argparse.Namespace) -> int:
-    try:
-        CMDs = [
-            "sudo apt-get update",
-            "sudo apt-get install -y debtree",
-            "sudo apt-get remove -y debtree"
-        ]
-        action = _current_action()
 
-        for cmd in CMDs:
-            run_command_on_remote(args, cmd)
+    with connect_to_remote(args) as conn:
+        try:
+            CMDs = [
+                "sudo apt-get update",
+                "sudo apt-get install -y debtree",
+                "sudo apt-get remove -y debtree"
+            ]
+            action = _current_action()
 
-        package = _package_results("success", "Test apt dependencies created", action, {})
-    except Exception as e:
-        package = _package_results("error", f"Failed creating test apt dependencies: {e}", action, {})
+            for cmd in CMDs:
+                run_command_on_remote(args, cmd, conn)
 
-    return package
+            package = _package_results("success", "Test apt dependencies created", action, {})
+        except Exception as e:
+            package = _package_results("error", f"Failed creating test apt dependencies: {e}", action, {})
+
+        return package
 
 
 # ---------------------------------------------------------------------------

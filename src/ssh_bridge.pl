@@ -43,7 +43,7 @@ actually_remove_log_files(_LogFiles) :-
 actually_remove_temp_file(Host, Port, User, temp_file(Path, _, _)) :-
     py_remote_executor(Host, Port, User, 
         "remove_file", _{path: Path}, 
-        Response
+        _
     ).
 
 actually_remove_kernels(Host, Port, User, Kernels) :-
@@ -60,7 +60,7 @@ actually_remove_kernels(Host, Port, User, Kernels) :-
 % -----------------------------------------------------------
 
 sync_facts_from_remote(Host, Port, User) :-
-    sync_remote_kernels(Host, Port, User),
+    sync_remote_kernels(Host, Port, User), 
     sync_remote_temp_files(Host, Port, User),
     sync_apt_autoremove(Host, Port, User),
     sync_remote_processes(Host, Port, User),
@@ -82,11 +82,11 @@ sync_remote_sockets(Host, Port, User) :-
     'pid': pid,
     'name': name
     */
-    retractall(listening_port(_, _, _, _, _, _, _, _, _, _, _)),
-    maplist(json_to_listening_port, JsonList, ListeningPorts),
-    maplist(assertz_listening_port, ListeningPorts),
-    length(ListeningPorts, Count),
-    format("[INFO] Loaded ~w listening ports from remote.~n~n", [Count]).
+    retractall(open_port(_, _, _, _, _, _, _, _, _, _, _)),
+    maplist(json_to_open_port, JsonList, OpenPorts),
+    maplist(assertz_open_port, OpenPorts),
+    length(OpenPorts, Count),
+    format("[INFO] Loaded ~w open ports from remote.~n~n", [Count]).
 
 collect_remote_sockets(Host, Port, User, Sockets) :-
     py_remote_executor(Host, Port, User, "get_remote_sockets", Response),
@@ -96,7 +96,7 @@ collect_remote_sockets(Host, Port, User, Sockets) :-
       fail
     ).
 
-json_to_listening_port(Dict, [Netid, State, RecvQ, SendQ, LocalAddress, 
+json_to_open_port(Dict, [Netid, State, RecvQ, SendQ, LocalAddress, 
     LocalPort, PeerAddress, PeerPort, Process, PID, Name]) :-
     
     Netid = Dict.netid,
@@ -111,10 +111,10 @@ json_to_listening_port(Dict, [Netid, State, RecvQ, SendQ, LocalAddress,
     PID = Dict.pid,
     Name = Dict.name.
 
-assertz_listening_port([Netid, State, RecvQ, SendQ, LocalAddress, LocalPort, PeerAddress, 
+assertz_open_port([Netid, State, RecvQ, SendQ, LocalAddress, LocalPort, PeerAddress, 
         PeerPort, Process, PID, Name]) :-
 
-    assertz(listening_port(
+    assertz(open_port(
         Netid, State, RecvQ, SendQ, LocalAddress, LocalPort, PeerAddress, 
         PeerPort, Process, PID, Name)).
 

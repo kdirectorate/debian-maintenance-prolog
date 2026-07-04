@@ -58,7 +58,7 @@ show_banner :-
 */
 
 make_changes:-
-    confirm_action('maintenance actions'),
+    confirm_action('maintenance actions'), !,
     target_host(Host),
     target_port(Port),
     target_user(User),
@@ -188,7 +188,7 @@ main(Argv) :-
         'maintenance_report.txt'
     ),
 
-
+    !,
     (   run_mode(execute) ->
         make_changes
     ;   format('~n[INFO] Dry run complete. No changes made.~n')
