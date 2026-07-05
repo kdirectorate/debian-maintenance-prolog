@@ -21,7 +21,8 @@
     process/13,
     open_port/11,
     suspicious_process/1,
-    run_mode/1
+    run_mode/1,
+    user/6
 ]).
 
 % Run mode — either dry_run or execute. Set once at startup by main.pl.
@@ -40,6 +41,7 @@
 :- dynamic modified_file/2.       % modified_file(Path, Timestamp)
 :- dynamic open_port/11.          % open_port(Netid, State, RecvQ, SendQ, LocalAddress, LocalPort, PeerAddress, PeerPort, Process, PID, Name)
 :- dynamic process/13.             % process(PID, PPID, UID, User, PCPU, PMEM, VSZ, RSS, TTY, Stat, StartTime, Time, Cmd)
+:- dynamic user/6.                % user(Username, UID, GID, Groupname, HomeDir, Shell)
 
 % Synthizized facts based on rules from the sync'd facts.
 :- dynamic deleteable_temp_files/1.      % list of temp_file/3 that meet deletion criteria

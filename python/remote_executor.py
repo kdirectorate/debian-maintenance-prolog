@@ -188,6 +188,33 @@ def do_remove_file(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 # RECON: Get information from the remote host
 # ---------------------------------------------------------------------------
+def do_get_remote_users(args: argparse.Namespace) -> int:
+    """Get a list of users from the remote host."""
+    try:
+        CMD = "getent passwd"
+        action = _current_action()
+        result = run_command_on_remote(args, CMD)
+        users = []
+        for line in result.stdout.strip().splitlines():
+            parts = line.split(":")
+            if len(parts) < 7: continue
+            users.append({
+                'username': parts[0],
+                'uid': int(parts[2]),
+                'gid': int(parts[3]),
+                'comment': parts[4],
+                'home_directory': parts[5],
+                'shell': parts[6]
+            })
+
+        package = _package_results("success", "Users collected successfully", 
+                                   action, {"users": users})
+    except Exception as e:
+        package = _package_results("error", f"Failed to collect users: {e}", action, {})
+
+    return package
+
+
 def do_get_remote_sockets(args: argparse.Namespace) -> int:
     """Get a list of open sockets from the remote host."""
     try:

@@ -60,12 +60,44 @@ actually_remove_kernels(Host, Port, User, Kernels) :-
 % -----------------------------------------------------------
 
 sync_facts_from_remote(Host, Port, User) :-
+    sync_remote_users(Host, Port, User),
     sync_remote_kernels(Host, Port, User), 
     sync_remote_temp_files(Host, Port, User),
     sync_apt_autoremove(Host, Port, User),
     sync_remote_processes(Host, Port, User),
     sync_remote_sockets(Host, Port, User),
     sync_modified_files(Host, Port, User).
+
+sync_remote_users(Host, Port, User) :-
+    collect_remote_users(Host, Port, User, JsonList),
+    retractall(user(_, _, _, _, _, _)),
+    maplist(json_to_user, JsonList, UserTerms),
+    maplist(assertz_user, UserTerms),
+    length(UserTerms, Count),
+    format("[INFO] Loaded ~w users from remote.~n~n", [Count]).
+
+collect_remote_users(Host, Port, User, Users) :-
+    py_remote_executor(Host, Port, User, "get_remote_users", Response),
+    ( Response.status = "success" ->
+        Users = Response.data.users
+    ; format("[ERR] Failed to collect users from remote: ~w~n", [Response.message]),
+      fail
+    ).
+
+json_to_user(Dict, [Username, UID, GID, HomeDir, Shell, Comment]) :-
+    Username = Dict.username,
+    UID = Dict.uid,
+    GID = Dict.gid,
+    HomeDir = Dict.home_directory,
+    Shell = Dict.shell,
+    Comment = Dict.comment.
+
+assertz_user([Username, UID, GID, HomeDir, Shell, Comment]) :-
+    % JSON strings arrive as SWI-Prolog strings; our policy facts
+    % (standard_user/1, standard_root_user/1) are atoms. Normalize to
+    % atoms here so \+ standard_user(User) unifies correctly.
+    atom_string(UsernameAtom, Username),
+    assertz(user(UsernameAtom, UID, GID, HomeDir, Shell, Comment)).
 
 sync_remote_sockets(Host, Port, User) :-
     collect_remote_sockets(Host, Port, User, JsonList),

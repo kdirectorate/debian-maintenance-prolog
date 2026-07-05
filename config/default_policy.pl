@@ -11,7 +11,8 @@
     default_target_user/1,
     critical_file/1,
     suspicious_process/1,
-    report_file/1
+    report_file/1,
+    standard_user/1
 ]).
 
 % ============================================================
@@ -47,7 +48,50 @@ critical_file('/etc/ssh/ssh_config').
 
 % Standard root-equivalent users (add any you deliberately created)
 standard_root_user(root).
-standard_root_user(toor).
+
+% standard non-root users (add any you deliberately created)
+% =============================================
+% standard_user/1 facts as proper Prolog ATOMS
+% Converted from your reference list
+% Single quotes used only where required (hyphens + leading underscore)
+% =============================================
+
+standard_user(daemon).
+standard_user(bin).
+standard_user(sys).
+standard_user(sync).
+standard_user(games).
+standard_user(man).
+standard_user(lp).
+standard_user(mail).
+standard_user(news).
+standard_user(uucp).
+standard_user(proxy).
+standard_user('www-data').
+standard_user(backup).
+standard_user(list).
+standard_user(irc).
+standard_user(gnats).
+standard_user(nobody).
+standard_user('_apt').
+standard_user('systemd-network').
+standard_user('systemd-resolve').
+standard_user(messagebus).
+standard_user('systemd-timesync').
+standard_user('avahi-autoipd').
+standard_user(sshd).
+standard_user('systemd-coredump').
+standard_user(lightdm).
+standard_user(saned).
+standard_user('pulse').
+standard_user('colord').
+standard_user('geoclue').
+standard_user(polkitd).
+standard_user(speech-dispatcher).
+standard_user(rtkit).
+standard_user(dnsmasq).
+standard_user(avahi).
+standard_user(speech-dispatcher).
 
 % Process basenames that are rarely legitimate on a production server
 % (matched against ps output; extend as your environment requires)

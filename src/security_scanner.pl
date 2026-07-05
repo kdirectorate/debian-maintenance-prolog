@@ -26,9 +26,10 @@ collect_findings(Findings) :-
     collect_file_mod_findings(FileFindings),
     collect_suspicious_process_findings(ProcFindings),
     collect_uid0_findings(UID0Findings),
+    collect_user_findings(UserFindings),
     %append([PortFindings, BruteFindings, FileFindings, ProcFindings, UID0Findings],
     %       Unsorted),
-    append([FileFindings, ProcFindings, PortFindings], Unsorted),  % only include the checks that are implemented
+    append([FileFindings, ProcFindings, PortFindings, UID0Findings, UserFindings], Unsorted),  % only include the checks that are implemented
     sort(Unsorted, Findings).   % remove any accidental duplicates
 
 
@@ -56,6 +57,11 @@ collect_suspicious_process_findings(Findings) :-
 collect_uid0_findings(Findings) :-
     findall(finding(What, Sev, Ev, Rec),
             check_nonstandard_uid0(What, Sev, Ev, Rec),
+            Findings).
+
+collect_user_findings(Findings) :-
+    findall(finding(What, Sev, Ev, Rec),
+            check_nonstandard_user(What, Sev, Ev, Rec),
             Findings).
 
 % ============================================================
@@ -158,11 +164,24 @@ suspicious_exe_location(ExePath) :-
 % ============================================================
 
 check_nonstandard_uid0(What, high, Evidence, Recommendation) :-
-    user_account(User, 0, Home),
-    \+ standard_root_user(User),           % negation as failure again
-    format(atom(What), 'Non-standard UID 0 account: ~w (home: ~w)', [User, Home]),
-    Evidence = user_account(User, 0, Home),
+    user(Username, UID, GID, HomeDir, Shell, Comment),
+    UID =:= 0,
+    \+ standard_root_user(Username),           % negation as failure again
+    format(atom(What), 'Non-standard UID 0 account: ~w (home: ~w)', [Username, HomeDir]),
+    Evidence = user_account(Username, 0, HomeDir),
     Recommendation = 'This is extremely serious. Review /etc/passwd and /etc/shadow. Remove the account if it was not deliberately created. Check authorized_keys and cron jobs for this user.'.
+
+% ============================================================
+% Bonus check: Non-standard user accounts (UID > 0)
+% ============================================================
+
+check_nonstandard_user(What, medium, Evidence, Recommendation) :-
+    user(Username, UID, GID, HomeDir, Shell, Comment),
+    UID > 0,
+    \+ standard_user(Username),           % negation as failure again
+    format(atom(What), 'Non-standard user account: ~w (UID: ~w, home: ~w)', [Username, UID, HomeDir]),
+    Evidence = user_account(Username, UID, HomeDir),
+    Recommendation = 'Review /etc/passwd and /etc/shadow. If this account was not deliberately created for a service or user, consider removing it. Check for any cron jobs or sudo privileges.'.
 
 % ============================================================
 % Utility: pretty-print one finding
