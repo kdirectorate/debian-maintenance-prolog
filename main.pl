@@ -57,39 +57,6 @@ show_banner :-
    4. Produce the report (Lesson 7)
 */
 
-make_changes:-
-    confirm_action('maintenance actions'), !,
-    target_host(Host),
-    target_port(Port),
-    target_user(User),
-
-    % Remove apt packages that are marked for autoremove
-    findall(P, autoremove_candidate(P), Packages),
-    ( Packages == [] ->
-        format('~n[INFO] No apt packages to remove.~n')
-    ; actually_remove_apt_packages(Host, Port, User, Packages),
-      format('~n[INFO] All marked apt packages removed.~n')
-    ),
-
-    % Purge old kernels
-    findall(K, removable_kernel(K), Kernels),
-    ( Kernels == [] ->
-        format('~n[INFO] No kernels to purge.~n')
-    ; actually_remove_kernels(Host, Port, User, Kernels),
-      format('~n[INFO] All marked kernels purged.~n')
-    ),
-
-    % Remove temp files that are marked for deletion
-    deleteable_temp_files(FilesToDelete),
-    ( FilesToDelete == [] ->
-        format('~n[INFO] No temp files to delete.~n')
-    ; forall(
-            member(F, FilesToDelete), 
-            actually_remove_temp_file(Host, Port, User, F)
-        ),
-        format('~n[INFO] All marked temp files deleted.~n')
-    ).
-
 confirm_action(Description) :-
     format('~n>>> About to perform: ~w~n', [Description]),
     format('    Proceed? [y/N]: '),
@@ -100,11 +67,6 @@ confirm_action(Description) :-
     ->  true
     ;   format('Action aborted by user.~n'), fail
     ).
-
-removable_kernel(K) :-
-    installed_kernel(K),
-    running_kernel(Running),
-    K \= Running.
 
 parse_options([], Opts, Opts).
 parse_options(['-h' | T], Acc, Opts) :-
@@ -169,26 +131,65 @@ main(Argv) :-
     sync_facts_from_remote(Host, Port, User),
     
     % Gather system state from synced facts and generate the report
-    findall(K, removable_kernel(K), SafeKernels),
+    running_kernel(RunningKernel),
+    findall(K, installed_kernel(K), InstalledKernels),
+    keep_at_least_previous(RunningKernel, InstalledKernels, SafeKernels),
+    
     findall(P, autoremove_candidate(P), AutoremoveCandidates),
+
     findall(temp_file(P, S, A),
         (temp_file(P, S, A),
             file_should_be_deleted(P, S, A)), 
         TempFilesToDelete),
-    assertz(deleteable_temp_files(TempFilesToDelete)),
 
     % security_scanner
     collect_findings(Findings),
 
     % Generate the report and write it to a file and the terminal
     write_and_display(
-        generate_maintenance_report(SafeKernels, Findings, AutoremoveCandidates),
+        generate_maintenance_report(
+            SafeKernels, 
+            Findings, 
+            AutoremoveCandidates,
+            TempFilesToDelete
+        ),
         'maintenance_report.txt'
     ),
 
-    !,
+    !, % No going back after this point, we have the report and the decisions
     (   run_mode(execute) ->
-        make_changes
+        confirm_action('maintenance actions'), !,
+        target_host(Host),
+        target_port(Port),
+        target_user(User),
+
+        % Remove apt packages that are marked for autoremove
+        ( AutoremoveCandidates == [] ->
+            format('~n[INFO] No apt packages to remove.~n')
+
+        ;   actually_remove_apt_packages(Host, Port, User, AutoremoveCandidates),
+            format('~n[INFO] All marked apt packages removed.~n')
+        ),
+
+        % Purge old kernels
+        ( SafeKernels == [] ->
+            format('~n[INFO] No kernels to purge.~n')
+
+        ;   actually_remove_kernels(Host, Port, User, SafeKernels),
+            format('~n[INFO] All marked kernels purged.~n')
+        ),
+
+        % Remove temp files that are marked for deletion
+        ( TempFilesToDelete == [] ->
+            format('~n[INFO] No temp files to delete.~n')
+
+        ;   forall(
+                member(F, TempFilesToDelete), 
+                actually_remove_temp_file(Host, Port, User, F)
+            ),
+            format('~n[INFO] All marked temp files deleted.~n')
+        )
+   
     ;   format('~n[INFO] Dry run complete. No changes made.~n')
     ),
     halt(0).

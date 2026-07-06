@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Callable
 from fabric import Connection
 
-DEBUG = True  # Set to True to enable debug output to stderr
+DEBUG = False  # Set to True to enable debug output to stderr
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +136,6 @@ def do_purge_kernels(args: argparse.Namespace) -> int:
 
             for kernel in kernels:
                 CMD = f"sudo apt purge -y linux-image-{kernel}"
-                sys.stderr.write(f"[DEBUG] Running command on remote {args.host}:{args.port}]: {CMD}\n")
                 run_command_on_remote(args, CMD, conn)
             
             CMD = "sudo update-grub"
@@ -162,7 +161,7 @@ def do_remove_packages(args: argparse.Namespace) -> int:
         if not packages:
             raise ValueError("Missing 'packages' parameter in JSON input.")
         
-        CMD = f"sudo apt-get remove -y {" ".join(packages)}"
+        CMD = f"sudo apt-get remove --purge -y {" ".join(packages)}"
         run_command_on_remote(args, CMD)
         package = _package_results("success", "Removed package.", 
                                    action, {"packages": packages})

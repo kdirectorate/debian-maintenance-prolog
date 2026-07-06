@@ -1,11 +1,17 @@
 :- module(apt_maintainer, [
-    pending_autoremove/2
+    actually_remove_apt_packages/4
 ]).
 
-/* Teaching note:
-   The bridge will run "apt-get autoremove --dry-run" (or equivalent)
-   and return parsed package lists. This module only contains the
-   decision rules: "is it worth running autoremove right now?"
-*/
-pending_autoremove([], false).
-% TODO: real rules that look at the list and decide
+:- use_module(ssh_bridge).
+
+% We're using a list here because the setup time for SSH connections is significant, 
+% and we want to avoid repeated connections for each file.
+actually_remove_apt_packages(Host, Port, User, Packages) :-
+    py_remote_executor(Host, Port, User, "remove_packages", 
+        _{packages: Packages}, Response),
+    ( Response.status = "success" ->
+        format("[INFO] Successfully removed apt packages.~n")
+    ; format("[ERR] Failed to remove apt packages: ~w~n", [Response.message]),
+      fail
+    ).
+

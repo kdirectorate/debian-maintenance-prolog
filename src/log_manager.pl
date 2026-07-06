@@ -37,3 +37,6 @@ rotated_extension(Ext) :-
     atom_number(Ext, N),
     integer(N),
     N >= 0.
+
+actually_remove_log_files(_LogFiles) :-
+    true. % TODO: implement the actual removal logic

@@ -1,5 +1,5 @@
 :- module(report_generator, [
-    generate_maintenance_report/4,   % +SafeKernels, +Findings, +AptPackages, +Mode
+    generate_maintenance_report/5,   % +SafeKernels, +Findings, +AptPackages, +Mode
     write_and_display/2
 ]).
 
@@ -9,11 +9,10 @@
 :- use_module('src/security_scanner').  % for explain_finding/1
 :- use_module('src/ssh_bridge').  % for running_kernel/1, installed_kernel/1, temp_file/3
 
-generate_maintenance_report(SafeKernels, Findings, AptPackages, Stream) :-
+generate_maintenance_report(SafeKernels, Findings, AptPackages, TempFilesToDelete, Stream) :-
     get_time(Stamp),
     target_host(Host),
     run_mode(RunMode),
-    deleteable_temp_files(FilesToDelete),
     format_time(atom(Timestamp), '%Y-%m-%d %H:%M:%S', Stamp),
     format(Stream, '~n========================================~n', []),
     format(Stream, 'Debian System Maintenance & Security Report~n', []),
@@ -28,7 +27,7 @@ generate_maintenance_report(SafeKernels, Findings, AptPackages, Stream) :-
     ),
     report_kernels_section(Stream, SafeKernels, RunMode),
     nl(Stream),
-    report_temp_section(Stream, FilesToDelete, RunMode),
+    report_temp_section(Stream, TempFilesToDelete, RunMode),
     nl(Stream),
     report_security_section(Stream, Findings),
     nl(Stream),

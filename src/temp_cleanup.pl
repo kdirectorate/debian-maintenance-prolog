@@ -1,20 +1,13 @@
 :- module(temp_cleanup, [
     file_should_be_deleted/3,
-    reclaimed_space/2
+    reclaimed_space/2,
+    actually_remove_temp_file/4
 ]).
 
 :- use_module(library(lists)).
 :- use_module('config/default_policy').   % thresholds & whitelists live here
 :- use_module('src/context').             % for temp_file/3
-
-
-/* Teaching note:
-   Lesson 2 introduced head/tail recursion. We keep a recursive helper
-   but also demonstrate findall + a filter predicate — both are valid
-   and idiomatic. The filter predicate (file_should_be_deleted/3) is
-   the declarative "policy rule".
-*/
-
+:- use_module('src/ssh_bridge').          % for py_remote_executor/5
 
 %% ============================================================
 %% file_should_be_deleted(+MaxAgeDays, +MaxSizeMB, +FileTerm)
@@ -37,3 +30,10 @@ reclaimed_space([], 0).
 reclaimed_space([temp_file(_, Size, _)|Rest], Total) :-
     reclaimed_space(Rest, RestTotal),
     Total is Size + RestTotal.
+
+actually_remove_temp_file(Host, Port, User, temp_file(Path, _, _)) :-
+    py_remote_executor(Host, Port, User, 
+        "remove_file", _{path: Path}, 
+        _
+    ).
+

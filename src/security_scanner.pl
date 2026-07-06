@@ -113,7 +113,6 @@ brute_force_from(IP, Count) :-
     failed_login(_Timestamp, _Username, IP),  % find all failed logins from this IP
     findall(1, failed_login(_, _, IP), Attempts),
     length(Attempts, Count),
-    format("[DEBUG] Found ~w failed login attempts from IP ~w~n", [Count, IP]),
     brute_force_threshold(Thresh),
     Count >= Thresh.
 

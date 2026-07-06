@@ -12,7 +12,8 @@
     critical_file/1,
     suspicious_process/1,
     report_file/1,
-    standard_user/1
+    standard_user/1,
+    kernels_to_keep/1
 ]).
 
 % ============================================================
@@ -25,6 +26,7 @@ default_target_user('root').
 
 report_file('./maintenance_report.log').
     
+kernels_to_keep(2).  % safety: always keep the running kernel + this many previous ones
 max_temp_age_days(5).
 max_temp_size_mb(10).
 max_log_size_mb(10).
@@ -87,11 +89,10 @@ standard_user('pulse').
 standard_user('colord').
 standard_user('geoclue').
 standard_user(polkitd).
-standard_user(speech-dispatcher).
+standard_user('speech-dispatcher').
 standard_user(rtkit).
 standard_user(dnsmasq).
 standard_user(avahi).
-standard_user(speech-dispatcher).
 
 % Process basenames that are rarely legitimate on a production server
 % (matched against ps output; extend as your environment requires)

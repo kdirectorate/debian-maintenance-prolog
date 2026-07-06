@@ -10,11 +10,9 @@
 
 :- module(ssh_bridge, [
     sync_facts_from_remote/3,
-    actually_remove_kernels/4,
-    actually_remove_apt_packages/4,
-    actually_remove_temp_file/4,
-    actually_remove_log_files/1,
-    test_create_data/3
+    test_create_data/3,
+    py_remote_executor/6,
+    py_remote_executor/5
     ]).
 
 :- use_module(library(process)).
@@ -26,33 +24,6 @@
 
 % Remote system facts live in src/context.pl — imported via use_module above.
 % ssh_bridge asserts into them; other modules query them from context directly.
-
-% We're using a list here because the setup time for SSH connections is significant, 
-% and we want to avoid repeated connections for each file.
-actually_remove_apt_packages(Host, Port, User, Packages) :-
-    py_remote_executor(Host, Port, User, "remove_packages", _{packages: Packages}, Response),
-    ( Response.status = "success" ->
-        format("[INFO] Successfully removed apt packages.~n")
-    ; format("[ERR] Failed to remove apt packages: ~w~n", [Response.message]),
-      fail
-    ).
-
-actually_remove_log_files(_LogFiles) :-
-    true. % TODO: implement the actual removal logic
-
-actually_remove_temp_file(Host, Port, User, temp_file(Path, _, _)) :-
-    py_remote_executor(Host, Port, User, 
-        "remove_file", _{path: Path}, 
-        _
-    ).
-
-actually_remove_kernels(Host, Port, User, Kernels) :-
-    py_remote_executor(Host, Port, User, "purge_kernels", _{kernels: Kernels}, Response),
-    ( Response.status = "success" ->
-        format("[INFO] Successfully purged kernels.~n")
-    ; format("[ERR] Failed to purge kernels: ~w~n", [Response.message]),
-      fail
-    ).
 
 
 % -----------------------------------------------------------
@@ -90,7 +61,6 @@ json_to_failed_login(Dict, [Timestamp, User, IP]) :-
 
 assertz_failed_login([Timestamp, User, IP]) :-
     atom_string(UserAtom, User),
-    format("[INFO] Adding failed login: ~w, ~w, ~w~n", [Timestamp, UserAtom, IP]),
     assertz(failed_login(Timestamp, UserAtom, IP)).
 
 sync_remote_users(Host, Port, User) :-
@@ -236,7 +206,7 @@ json_to_modified_file([Path, _SizeMB, Timestamp], modified_file(PathAtom, Timest
 assertz_modified_file(modified_file(Path, Timestamp)) :-
     assertz(modified_file(Path, Timestamp)).
 
-    %% sync_apt_autoremove(+Host, +Port, +User) is det.
+%% sync_apt_autoremove(+Host, +Port, +User) is det.
 % Add facts about packages that apt wants to remove to the Prolog database.
 sync_apt_autoremove(Host, Port, User) :-
     collect_apt_autoremove(Host, Port, User, AutoremoveCandidates),
