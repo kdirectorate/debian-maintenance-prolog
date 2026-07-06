@@ -21,13 +21,11 @@
 %% ============================================================
 % Declarative policy rule: a file should be deleted if it is older than
 % MaxAgeDays and larger than MaxSizeMB. FileTerm is a temp_file(Path,
-file_should_be_deleted(Path, SizeMB, AgeDays) :-
+file_should_be_deleted(_Path, SizeMB, AgeDays) :-
     max_temp_age_days(MaxAgeDays),
     max_temp_size_mb(MaxSizeMB),
     AgeDays > MaxAgeDays,
-    SizeMB > MaxSizeMB,
-    format('~n[INFO] File ~w (~w MB, ~w days old) is older than ~w days and larger than ~w MB, marked for deletion.~n', [Path, SizeMB, AgeDays, MaxAgeDays, MaxSizeMB]).
-
+    SizeMB > MaxSizeMB.
 
 %% ============================================================
 %% reclaimed_space(+FileList, -TotalBytes)

@@ -5,7 +5,7 @@
 */
 
 :- module(security_scanner, [
-    explain_finding/1,
+    explain_finding/2,
     collect_findings/1        % +Findings:list
 ]).
 
@@ -22,14 +22,12 @@
 
 collect_findings(Findings) :-
     collect_port_findings(PortFindings),
-    %collect_brute_force_findings(BruteFindings),
+    collect_brute_force_findings(BruteFindings),
     collect_file_mod_findings(FileFindings),
     collect_suspicious_process_findings(ProcFindings),
     collect_uid0_findings(UID0Findings),
     collect_user_findings(UserFindings),
-    %append([PortFindings, BruteFindings, FileFindings, ProcFindings, UID0Findings],
-    %       Unsorted),
-    append([FileFindings, ProcFindings, PortFindings, UID0Findings, UserFindings], Unsorted),  % only include the checks that are implemented
+    append([FileFindings, ProcFindings, PortFindings, UID0Findings, UserFindings, BruteFindings], Unsorted),  % only include the checks that are implemented
     sort(Unsorted, Findings).   % remove any accidental duplicates
 
 
@@ -112,10 +110,13 @@ check_brute_force(What, high, Evidence, Recommendation) :-
 %% brute_force_from(-IP, -Count) 
 %  Uses findall + length (classic aggregation pattern you already know from temp_cleanup)
 brute_force_from(IP, Count) :-
-    findall(1, failed_login(IP, _, _), Attempts),
+    failed_login(_Timestamp, _Username, IP),  % find all failed logins from this IP
+    findall(1, failed_login(_, _, IP), Attempts),
     length(Attempts, Count),
+    format("[DEBUG] Found ~w failed login attempts from IP ~w~n", [Count, IP]),
     brute_force_threshold(Thresh),
     Count >= Thresh.
+
 
 % ============================================================
 % CHECK 3: Recently modified critical system files
@@ -164,7 +165,7 @@ suspicious_exe_location(ExePath) :-
 % ============================================================
 
 check_nonstandard_uid0(What, high, Evidence, Recommendation) :-
-    user(Username, UID, GID, HomeDir, Shell, Comment),
+    user(Username, UID, _GID, HomeDir, _Shell, _Comment),
     UID =:= 0,
     \+ standard_root_user(Username),           % negation as failure again
     format(atom(What), 'Non-standard UID 0 account: ~w (home: ~w)', [Username, HomeDir]),
@@ -176,7 +177,7 @@ check_nonstandard_uid0(What, high, Evidence, Recommendation) :-
 % ============================================================
 
 check_nonstandard_user(What, medium, Evidence, Recommendation) :-
-    user(Username, UID, GID, HomeDir, Shell, Comment),
+    user(Username, UID, _GID, HomeDir, _Shell, _Comment),
     UID > 0,
     \+ standard_user(Username),           % negation as failure again
     format(atom(What), 'Non-standard user account: ~w (UID: ~w, home: ~w)', [Username, UID, HomeDir]),
@@ -187,9 +188,9 @@ check_nonstandard_user(What, medium, Evidence, Recommendation) :-
 % Utility: pretty-print one finding
 % ============================================================
 
-explain_finding(finding(What, Severity, Evidence, Recommendation)) :-
-    format('~n=== ~w SEVERITY: ~w ===~n', [Severity, What]),
-    format('Evidence: ~w~n', [Evidence]),
-    format('Action:   ~w~n', [Recommendation]).
+explain_finding(Stream, finding(What, Severity, Evidence, Recommendation)) :-
+    format(Stream, '~n=== ~w SEVERITY: ~w ===~n', [Severity, What]),
+    format(Stream, 'Evidence: ~w~n', [Evidence]),
+    format(Stream, 'Action:   ~w~n', [Recommendation]).
 
 % You can also export a version that takes a list and prints all.

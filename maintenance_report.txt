@@ -2,23 +2,55 @@
 ========================================
 Debian System Maintenance & Security Report
 Host: debian12-maint-test
-Generated: 2026-07-04 21:52:10   Mode: execute
+Generated: 2026-07-05 16:09:40   Mode: dry_run
 ========================================
 
 Running Kernel:   - 6.1.0-49-amd64
-[Kernels] ACTION — removing 1 kernel(s):
-  - 6.1.0-49-amd64-unsigned
+[Kernels] No old kernels are safe to remove.
 
-[Temp Files] ACTION — deleting 1 temp file(s):
-  - temp_file(/tmp/test_temp_20mb_expired,20.0,7.4)
+[Temp Files] No temp files meet the deletion criteria.
 
-[Security] Found 7 security issue(s):
+[Security] Found 9 security issue(s):
+
+=== high SEVERITY: Brute-force login attempts from 192.168.1.126 (6 failures) ===
+Evidence: brute_force(192.168.1.126,6)
+Action:   Immediately block the IP (fail2ban, ufw, or iptables). Review /var/log/auth.log or journalctl -u ssh. This is almost always malicious activity.
+
+=== high SEVERITY: Brute-force login attempts from 192.168.1.127 (5 failures) ===
+Evidence: brute_force(192.168.1.127,5)
+Action:   Immediately block the IP (fail2ban, ufw, or iptables). Review /var/log/auth.log or journalctl -u ssh. This is almost always malicious activity.
+
+=== high SEVERITY: Modified file /etc/passwd modified 2.06 days ago ===
+Evidence: modified_file(/etc/passwd,2.06)
+Action:   Verify with: debsums -c ~w or dpkg -V. Check package manager history (apt history.log). If unexpected, treat as potential compromise. Compare mtime with last legitimate update.
+
+=== medium SEVERITY: Non-standard user account: shinhwa (UID: 1000, home: /home/shinhwa) ===
+Evidence: user_account(shinhwa,1000,/home/shinhwa)
+Action:   Review /etc/passwd and /etc/shadow. If this account was not deliberately created for a service or user, consider removing it. Check for any cron jobs or sudo privileges.
+
+=== medium SEVERITY: Non-standard user account: speech-dispatcher (UID: 103, home: /run/speech-dispatcher) ===
+Evidence: user_account(speech-dispatcher,103,/run/speech-dispatcher)
+Action:   Review /etc/passwd and /etc/shadow. If this account was not deliberately created for a service or user, consider removing it. Check for any cron jobs or sudo privileges.
+
+=== high SEVERITY: Process cobaltstrike infinity (PID 1804) contains suspicious token cobaltstrike ===
+Evidence: suspect_process(1804,shinhwa,cobaltstrike infinity)
+Action:   Investigate immediately with: ps auxfww, lsof -p <PID>, and cat /proc/<PID>/exe. Kill only after confirmation. This is a classic sign of privilege escalation or malware.
+
+=== high SEVERITY: Process nc infinity (PID 1786) contains suspicious token nc ===
+Evidence: suspect_process(1786,shinhwa,nc infinity)
+Action:   Investigate immediately with: ps auxfww, lsof -p <PID>, and cat /proc/<PID>/exe. Kill only after confirmation. This is a classic sign of privilege escalation or malware.
+
+=== high SEVERITY: Process pwncat infinity (PID 1795) contains suspicious token pwncat ===
+Evidence: suspect_process(1795,shinhwa,pwncat infinity)
+Action:   Investigate immediately with: ps auxfww, lsof -p <PID>, and cat /proc/<PID>/exe. Kill only after confirmation. This is a classic sign of privilege escalation or malware.
+
+=== low SEVERITY: Unexpected listening tcp port 631 ===
+Evidence: listening_port(631,tcp)
+Action:   Run: ss -tuln | grep LISTEN and journalctl -u <service>. If legitimate, add it to expected_listening_port/2 in policy or default_policy.pl. Consider firewall rules.
 
 Log file analysis is currently disabled due to limitations in log rotation detection.
 
-[APT] ACTION — auto-removing 2 package(s):
-  - dctrl-tools
-  - libapt-pkg-perl
+[APT] No packages meet the auto-remove criteria.
 
 
 ========================================

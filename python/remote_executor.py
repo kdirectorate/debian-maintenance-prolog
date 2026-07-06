@@ -18,6 +18,9 @@ from pathlib import Path
 from typing import Callable
 from fabric import Connection
 
+DEBUG = True  # Set to True to enable debug output to stderr
+
+
 # ---------------------------------------------------------------------------
 # Example JSON output for testing
 # JSON = f"""
@@ -78,6 +81,8 @@ def run_command_on_remote(args: argparse.Namespace, cmd: str, conn: Connection =
         if args.key is not None:
             connect_kwargs["key_filename"] = str(args.key)
 
+        if DEBUG:
+            sys.stderr.write(f"[DEBUG] Remote: {args.host}:{args.port}]: {cmd!r}\n")
         result = conn.run(cmd, hide=True, warn=True)
 
         return result
@@ -188,6 +193,35 @@ def do_remove_file(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 # RECON: Get information from the remote host
 # ---------------------------------------------------------------------------
+
+def do_get_remote_failed_logins(args: argparse.Namespace) -> int:
+    """Get a list of failed login attempts from the remote host."""
+    try:
+        CMD = "sudo journalctl -u ssh -p 3 --since '30 days ago' | grep 'error: maximum authentication attempts exceeded.*\\[preauth\\]'"
+        # Jun 25 12:50:33 debian12 sshd[771]: error: maximum authentication attempts exceeded for shinhwa from 192.168.1.126 port 59216 ssh2 [preauth]
+
+        action = _current_action()
+        result = run_command_on_remote(args, CMD)
+        failed_logins = []
+        for line in result.stdout.strip().splitlines():
+            parts = line.split()
+            if len(parts) < 9: continue
+            fl = {
+                'timestamp': " ".join(parts[0:3]),
+                'user': parts[11],
+                'ip': parts[13] if len(parts) > 10 else None
+            }
+            failed_logins.append(fl)
+            if DEBUG:
+                sys.stderr.write(f"[DEBUG] Failed login entry: {fl} \n")
+
+        package = _package_results("success", "Failed logins collected successfully", 
+                                   action, {"failed_logins": failed_logins})
+    except Exception as e:
+        package = _package_results("error", f"Failed to collect failed logins: {e}", action, {})
+
+    return package
+
 def do_get_remote_users(args: argparse.Namespace) -> int:
     """Get a list of users from the remote host."""
     try:

@@ -83,7 +83,7 @@ report_security_section(Stream, []) :-
 report_security_section(Stream, Findings) :-
     length(Findings, N),
     format(Stream, '[Security] Found ~d security issue(s):~n', [N]),
-    forall(member(F, Findings), explain_finding(F)).
+    forall(member(F, Findings), explain_finding(Stream,F)).
 
 % -----------------------------------------------------------
 % Temp files section

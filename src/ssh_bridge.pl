@@ -60,6 +60,7 @@ actually_remove_kernels(Host, Port, User, Kernels) :-
 % -----------------------------------------------------------
 
 sync_facts_from_remote(Host, Port, User) :-
+    sync_failed_logins(Host, Port, User),
     sync_remote_users(Host, Port, User),
     sync_remote_kernels(Host, Port, User), 
     sync_remote_temp_files(Host, Port, User),
@@ -68,13 +69,35 @@ sync_facts_from_remote(Host, Port, User) :-
     sync_remote_sockets(Host, Port, User),
     sync_modified_files(Host, Port, User).
 
+sync_failed_logins(Host, Port, User) :-
+    collect_failed_logins(Host, Port, User, JsonList),
+    retractall(failed_login(_, _, _)),
+    maplist(json_to_failed_login, JsonList, FailedLogins),
+    maplist(assertz_failed_login, FailedLogins).
+
+collect_failed_logins(Host, Port, User, FailedLogins) :-
+    py_remote_executor(Host, Port, User, "get_remote_failed_logins", Response),
+    ( Response.status = "success" ->
+        FailedLogins = Response.data.failed_logins
+    ; format("[ERR] Failed to collect failed logins from remote: ~w~n", [Response.message]),
+      fail
+    ).
+
+json_to_failed_login(Dict, [Timestamp, User, IP]) :-
+    Timestamp = Dict.timestamp,
+    User = Dict.user,
+    IP = Dict.ip.
+
+assertz_failed_login([Timestamp, User, IP]) :-
+    atom_string(UserAtom, User),
+    format("[INFO] Adding failed login: ~w, ~w, ~w~n", [Timestamp, UserAtom, IP]),
+    assertz(failed_login(Timestamp, UserAtom, IP)).
+
 sync_remote_users(Host, Port, User) :-
     collect_remote_users(Host, Port, User, JsonList),
     retractall(user(_, _, _, _, _, _)),
     maplist(json_to_user, JsonList, UserTerms),
-    maplist(assertz_user, UserTerms),
-    length(UserTerms, Count),
-    format("[INFO] Loaded ~w users from remote.~n~n", [Count]).
+    maplist(assertz_user, UserTerms).
 
 collect_remote_users(Host, Port, User, Users) :-
     py_remote_executor(Host, Port, User, "get_remote_users", Response),
@@ -116,9 +139,7 @@ sync_remote_sockets(Host, Port, User) :-
     */
     retractall(open_port(_, _, _, _, _, _, _, _, _, _, _)),
     maplist(json_to_open_port, JsonList, OpenPorts),
-    maplist(assertz_open_port, OpenPorts),
-    length(OpenPorts, Count),
-    format("[INFO] Loaded ~w open ports from remote.~n~n", [Count]).
+    maplist(assertz_open_port, OpenPorts).
 
 collect_remote_sockets(Host, Port, User, Sockets) :-
     py_remote_executor(Host, Port, User, "get_remote_sockets", Response),
@@ -163,10 +184,7 @@ sync_remote_processes(Host, Port, User) :-
     collect_remote_processes(Host, Port, User, JsonList),
     retractall(process(_,_, _, _, _, _, _, _, _, _, _, _, _)),
     maplist(json_to_process, JsonList, ProcessTerms),
-    maplist(assertz_process, ProcessTerms),
-    length(ProcessTerms, Count),
-    
-    format("[INFO] Loaded ~w processes from remote.~n~n", [Count]).
+    maplist(assertz_process, ProcessTerms).
 
 collect_remote_processes(Host, Port, User, Processes) :-
     py_remote_executor(Host, Port, User, "get_remote_processes", Response),
@@ -199,9 +217,7 @@ sync_modified_files(Host, Port, User) :-
     collect_modified_files(Host, Port, User, JsonList),
     retractall(modified_file(_, _)),
     maplist(json_to_modified_file, JsonList, ModifiedFiles),
-    maplist(assertz_modified_file, ModifiedFiles),
-    length(ModifiedFiles, Count),
-    format("[INFO] Loaded ~w modified files from remote.~n~n", [Count]).
+    maplist(assertz_modified_file, ModifiedFiles).
 
 collect_modified_files(Host, Port, User, ModifiedFiles) :-
     py_remote_executor(Host, Port, User, "collect_modified_files", Response),
@@ -226,9 +242,7 @@ sync_apt_autoremove(Host, Port, User) :-
     collect_apt_autoremove(Host, Port, User, AutoremoveCandidates),
     retractall(autoremove_candidate(_)),
     maplist(json_to_autoremove_candidate, AutoremoveCandidates, PrologCandidates),
-    maplist(assertz_autoremove_candidate, PrologCandidates),
-    length(PrologCandidates, Count),
-    format("[INFO] Loaded ~w apt autoremove candidates from remote.~n~n", [Count]).
+    maplist(assertz_autoremove_candidate, PrologCandidates).
 
 %% collect_apt_autoremove(+Host, +Port, +User, -AutoremoveCandidates) is det.
 % Calls the Python helper and returns apt autoremove information on success
@@ -255,12 +269,8 @@ sync_remote_kernels(Host, Port, User) :-
     retractall(installed_kernel(_)),
     json_to_installed_kernel(Running, RunningTerm),
     assertz(running_kernel(RunningTerm)),
-    format('~n[INFO] Loaded running kernel from remote: ~w~n', [Running]),
     json_to_installed_kernel_list(Installed, InstalledTerms),
-    maplist(assertz_installed, InstalledTerms),
-    length(Installed, Count),
-    format('~n[INFO] Running kernel from remote: ~w~n', [Running]),
-    format('[INFO] Loaded ~w other installed kernels.~n~n', [Count]).
+    maplist(assertz_installed, InstalledTerms).
 
 %% collect_remote_kernels(+Host, +Port, +User, -Kernels) is det.
 % Calls the Python helper and returns kernels(Running, Installed) on success
@@ -275,6 +285,19 @@ collect_remote_kernels(Host, Port, User, kernels(Running, Installed)) :-
     ).
 
 json_to_installed_kernel_list([], []).
+
+json_to_installed_kernel_list([KernelString | Rest], RestTerms) :-
+    KernelString = null,  % Skip null entries
+    json_to_installed_kernel_list(Rest, RestTerms).
+
+json_to_installed_kernel_list([KernelString | Rest], RestTerms) :-
+    KernelString == "",  % Skip empty entries
+    json_to_installed_kernel_list(Rest, RestTerms).
+
+json_to_installed_kernel_list([KernelString | Rest], RestTerms) :-
+    sub_atom(KernelString, _, 9, 0, "-unsigned"),  % Skip entries ending with "-unsigned"
+    json_to_installed_kernel_list(Rest, RestTerms).
+
 json_to_installed_kernel_list([KernelString | Rest], [KernelAtom | RestTerms]) :-
     atom_string(KernelAtom, KernelString),
     json_to_installed_kernel_list(Rest, RestTerms).
@@ -291,9 +314,7 @@ sync_remote_temp_files(Host, Port, User) :-
     collect_remote_temp_files(Host, Port, User, JsonList),
     retractall(temp_file(_, _, _)),
     maplist(json_to_temp_file, JsonList, TempFiles),
-    maplist(assertz_temp_file, TempFiles),
-    length(TempFiles, Count),
-    format('~n[INFO] Loaded ~w temp files from remote.~n~n', [Count]).
+    maplist(assertz_temp_file, TempFiles).
 
 collect_remote_temp_files(Host, Port, User, TempFiles) :-
     py_remote_executor(Host, Port, User, "collect_temp_files", Response),
