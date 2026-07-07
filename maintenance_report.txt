@@ -2,7 +2,7 @@
 ========================================
 Debian System Maintenance & Security Report
 Host: debian12-maint-test
-Generated: 2026-07-07 16:18:11   Mode: execute
+Generated: 2026-07-07 16:34:45   Mode: execute
 ========================================
 
 [Security] Found 7 security issue(s):
@@ -19,16 +19,16 @@ Action:   Verify with: debsums -c ~w or dpkg -V. Check package manager history (
 Evidence: user_account(shinhwa,1000,/home/shinhwa)
 Action:   Review /etc/passwd and /etc/shadow. If this account was not deliberately created for a service or user, consider removing it. Check for any cron jobs or sudo privileges.
 
-=== high SEVERITY: Process cobaltstrike infinity (PID 15533) contains suspicious token cobaltstrike ===
-Evidence: suspect_process(15533,shinhwa,cobaltstrike infinity)
+=== high SEVERITY: Process cobaltstrike infinity (PID 1443) contains suspicious token cobaltstrike ===
+Evidence: suspect_process(1443,shinhwa,cobaltstrike infinity)
 Action:   Investigate immediately with: ps auxfww, lsof -p <PID>, and cat /proc/<PID>/exe. Kill only after confirmation. This is a classic sign of privilege escalation or malware.
 
-=== high SEVERITY: Process nc infinity (PID 15515) contains suspicious token nc ===
-Evidence: suspect_process(15515,shinhwa,nc infinity)
+=== high SEVERITY: Process nc infinity (PID 1425) contains suspicious token nc ===
+Evidence: suspect_process(1425,shinhwa,nc infinity)
 Action:   Investigate immediately with: ps auxfww, lsof -p <PID>, and cat /proc/<PID>/exe. Kill only after confirmation. This is a classic sign of privilege escalation or malware.
 
-=== high SEVERITY: Process pwncat infinity (PID 15524) contains suspicious token pwncat ===
-Evidence: suspect_process(15524,shinhwa,pwncat infinity)
+=== high SEVERITY: Process pwncat infinity (PID 1434) contains suspicious token pwncat ===
+Evidence: suspect_process(1434,shinhwa,pwncat infinity)
 Action:   Investigate immediately with: ps auxfww, lsof -p <PID>, and cat /proc/<PID>/exe. Kill only after confirmation. This is a classic sign of privilege escalation or malware.
 
 === low SEVERITY: Unexpected listening tcp port 631 ===
@@ -43,7 +43,8 @@ Log file analysis is currently disabled due to limitations in log rotation detec
 
 
 Running Kernel:   - 6.1.0-49-amd64
-[Kernels] No old kernels are safe to remove.
+[Kernels] ACTION — removing 1 kernel(s):
+  - 6.1.0-13-amd64
 
 [Temp Files] ACTION — deleting 1 temp file(s):
   - temp_file(/tmp/test_temp_20mb_expired,20.0,7.0)
