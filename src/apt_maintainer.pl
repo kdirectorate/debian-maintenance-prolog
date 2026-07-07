@@ -14,4 +14,3 @@ actually_remove_apt_packages(Host, Port, User, Packages) :-
     ; format("[ERR] Failed to remove apt packages: ~w~n", [Response.message]),
       fail
     ).
-

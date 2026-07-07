@@ -20,6 +20,14 @@ generate_maintenance_report(SafeKernels, Findings, AptPackages, TempFilesToDelet
     format(Stream, 'Generated: ~w   Mode: ~w~n', [Timestamp, RunMode]),
     format(Stream, '========================================~n~n', []),
 
+    report_security_section(Stream, Findings),
+    nl(Stream),
+    %report_log_section([], Mode),  % TODO: replace [] with actual log entries when available
+    format(Stream, 'Log file analysis is currently disabled due to limitations in log rotation detection.~n', []),
+    nl(Stream),
+    report_apt_section(Stream, AptPackages, RunMode),  
+    nl(Stream),
+    nl(Stream),
     format(Stream, 'Running Kernel: ', []),
     (   running_kernel(RunningKernel) ->
         format(Stream, '  - ~w~n', [RunningKernel])
@@ -28,14 +36,6 @@ generate_maintenance_report(SafeKernels, Findings, AptPackages, TempFilesToDelet
     report_kernels_section(Stream, SafeKernels, RunMode),
     nl(Stream),
     report_temp_section(Stream, TempFilesToDelete, RunMode),
-    nl(Stream),
-    report_security_section(Stream, Findings),
-    nl(Stream),
-    %report_log_section([], Mode),  % TODO: replace [] with actual log entries when available
-    format(Stream, 'Log file analysis is currently disabled due to limitations in log rotation detection.~n', []),
-    nl(Stream),
-    report_apt_section(Stream, AptPackages, RunMode),  
-    nl(Stream),
     nl(Stream),
     format(Stream, '========================================~n', []),
     format(Stream, '~n--- End of Report ---~n~n', []).

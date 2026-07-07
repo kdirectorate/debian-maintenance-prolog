@@ -1,0 +1,7 @@
+{
+    "continue.enableTabAutocomplete": false,
+    "continue.enableNextEdit": false,
+    "continue.enableQuickActions": true,
+    "continue.enableConsole": true,
+    "continue.disableQuickFix": false
+}

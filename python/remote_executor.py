@@ -161,8 +161,14 @@ def do_remove_packages(args: argparse.Namespace) -> int:
         if not packages:
             raise ValueError("Missing 'packages' parameter in JSON input.")
         
-        CMD = f"sudo apt-get remove --purge -y {" ".join(packages)}"
-        run_command_on_remote(args, CMD)
+        CMDs = [
+            f"sudo apt-get remove --purge -y {" ".join(packages)}",
+            f"sudo apt-get autoclean -y",
+        ]
+        with connect_to_remote(args) as conn:
+            for CMD in CMDs:
+                run_command_on_remote(args, CMD, conn)
+
         package = _package_results("success", "Removed package.", 
                                    action, {"packages": packages})
     except Exception as e:

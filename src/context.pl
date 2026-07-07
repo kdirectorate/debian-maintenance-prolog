@@ -22,12 +22,16 @@
     open_port/11,
     suspicious_process/1,
     run_mode/1,
+    force_changes/1,
     user/6,
     failed_login/3
 ]).
 
 % Run mode — either dry_run or execute. Set once at startup by main.pl.
 :- dynamic run_mode/1.
+
+% Force changes to be made without prompting
+:- dynamic force_changes/1.
 
 % SSH connection parameters — asserted once by main.pl after CLI parsing.
 :- dynamic target_host/1.

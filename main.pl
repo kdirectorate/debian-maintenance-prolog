@@ -58,6 +58,10 @@ show_banner :-
 */
 
 confirm_action(Description) :-
+    force_changes(true), !,
+    format('~n>>> Force changes enabled. Proceeding with: ~w~n', [Description]).
+
+confirm_action(Description) :-
     format('~n>>> About to perform: ~w~n', [Description]),
     format('    Proceed? [y/N]: '),
     flush_output(user_output),
@@ -69,52 +73,86 @@ confirm_action(Description) :-
     ).
 
 parse_options([], Opts, Opts).
-parse_options(['-h' | T], Acc, Opts) :-
+parse_options(['-h' | T], Acc, Opts) :- !,
     parse_options(T, [display_help(true) | Acc], Opts).
 
-parse_options(['-t' | T], Acc, Opts) :-
+parse_options(['-t' | T], Acc, Opts) :- !,
     parse_options(T, [test_data(true) | Acc], Opts).
+parse_options(['--yes' | T], Acc, Opts) :- !,
+    parse_options(T, [force_changes(true) | Acc], Opts).
+parse_options(['--force' | T], Acc, Opts) :- !,
+    parse_options(T, [force_changes(true) | Acc], Opts).
 
-parse_options(['--dry-run' | T], Acc, Opts) :-
+parse_options(['--dry-run' | T], Acc, Opts) :- !,
     parse_options(T, [dry_run(true) | Acc], Opts).
-parse_options(['--host', Host | T], Acc, Opts) :-
+parse_options(['-n' | T], Acc, Opts) :- !,
+    parse_options(T, [dry_run(true) | Acc], Opts).
+
+parse_options(['--host', Host | T], Acc, Opts) :- !,
     parse_options(T, [target_host(Host) | Acc], Opts).
-parse_options(['--port', Port | T], Acc, Opts) :-
+parse_options(['--port', Port | T], Acc, Opts) :- !,
     parse_options(T, [target_port(Port) | Acc], Opts).
-parse_options(['--user', User | T], Acc, Opts) :-
+parse_options(['--user', User | T], Acc, Opts) :- !,
     parse_options(T, [target_user(User) | Acc], Opts).
-parse_options([Unknown | T], Acc, Opts) :-
-    format('Warning: unknown argument ~w~n', [Unknown]),
-    parse_options(T, Acc, Opts).
+
+parse_options(['--host' | []], _Acc, _Opts) :- !,
+    format('Error: --host requires a hostname argument~n'),
+    fail.
+parse_options(['--port' | []], _Acc, _Opts) :- !,
+    format('Error: --port requires a port number argument~n'),
+    fail.
+parse_options(['--user' | []], _Acc, _Opts) :- !,
+    format('Error: --user requires a username argument~n'),
+    fail.
+
+parse_options([Unknown | _T], _Acc, _Opts) :-
+    format('Error: unknown argument ~w~n', [Unknown]),
+    fail.
 
 main(Argv) :-
     show_banner,
-    parse_options(Argv, [], OptionsRev),
-    reverse(OptionsRev, Options),
-
-    (   member(display_help(true), Options),
-        format('Usage: swipl -s main.pl [options]~n'),
-        format('Options:~n'),
-        format('  --dry-run           : Show what would be done without making changes~n'),
-        format('  --host <hostname>  : Specify the target host (default: debian12-maint-test)~n'),
-        format('  --port <port>      : Specify the SSH port (default: 22)~n'),
-        format('  --user <username>  : Specify the SSH user (default: shinhwa)~n'),
-        format('  -t                 : Create test data on remote server. DO NOT USE IN PROD~n'),
-        format('  -h                 : Display this help message~n'),
-        halt(0)
-    ;   true
+    ( 
+        parse_options(Argv, [], OptionsRev)
+    ->  reverse(OptionsRev, Options),
+        (   member(display_help(true), Options),
+            format('Usage: swipl -s main.pl [options]~n'),
+            format('Options:~n'),
+            format('  --dry-run           : Show what would be done without making changes~n'),
+            format('  --host <hostname>  : Specify the target host (default: ~w)~n', [default_target_host]),
+            format('  --port <port>      : Specify the SSH port (default: ~w)~n', [default_target_port]),
+            format('  --user <username>  : Specify the SSH user (default: ~w)~n', [default_target_user]),
+            format('  -t                 : Create test data on remote server. DO NOT USE IN PROD~n'),
+            format('  -h                 : Display this help message~n'),
+            halt(0)
+        ;   true
+        )
+    ;   
+        format('Error: failed to parse command line arguments. Try -h for help.~n'),
+        halt(1)
     ),
+
+    retractall(target_host(_)),
+    retractall(target_port(_)),
+    retractall(target_user(_)),
+    retractall(run_mode(_)),
+    retractall(force_changes(_)),
 
     ( member(target_host(Host), Options) ; default_target_host(Host) ),
     ( member(target_port(Port), Options) ; default_target_port(Port) ),
     ( member(target_user(User), Options) ; default_target_user(User) ),
     assertz(target_host(Host)),
-    assertz(target_port(Port)),
+    ( number(Port) -> PortNum = Port ; number_string(PortNum, Port) ),
+    assertz(target_port(PortNum)),
     assertz(target_user(User)),
 
     (member(dry_run(true), Options)
     ->  assertz(run_mode(dry_run))
     ;   assertz(run_mode(execute))
+    ),
+
+    (member(force_changes(true), Options)
+    ->  assertz(force_changes(true))
+    ;   assertz(force_changes(false))
     ),
 
     ( member(test_data(true), Options),

@@ -57,8 +57,7 @@ You will build a command-line tool, invoked locally on your Debian development m
 1. **Temporary File Cleanup**  
    Walk common temporary locations (`/tmp`, `/var/tmp`, user caches, `/var/cache/apt/archives` when safe) and remove files and directories that meet age or size criteria. Safely handle permissions and report space reclaimed.
 
-2. **Log File Truncation / Rotation**  
-   Scan `/var/log` for files that have grown “out of control” (size exceeds a configurable threshold, e.g., 100 MiB, or show signs of runaway logging). Safely truncate them while preserving the most recent useful entries (or invoke `logrotate` where appropriate). Never delete log files entirely unless they are known rotated archives.
+2. This requirement deleted as it was impractical.
 
 3. **Old Kernel Package Removal**  
    Determine the currently running kernel (`uname -r`). Identify all other installed `linux-image-*` packages. Remove only those that are provably safe to remove (never the running kernel; optionally keep the immediately previous kernel for boot safety). Update the bootloader if necessary.
@@ -134,7 +133,7 @@ debian-maintenance-prolog/
 | FR-01  | Accept CLI arguments or config file: `--host`, `--user`, `--key`, `--dry-run`, `--verbose`, `--policy` | Must     |
 | FR-02  | Establish SSH connection (key-based) and handle authentication / network errors with clear messages | Must     |
 | FR-03  | Collect and decide on temporary files to remove using age/size/policy rules written in Prolog | Must     |
-| FR-04  | Identify “out of control” logs in `/var/log`, decide truncation strategy, and execute safely | Must     |
+| FR-04  | Identify “out of control” logs in `/var/log`, decide truncation strategy, and execute safely | Optional     |
 | FR-05  | Determine running kernel, compute safe-to-remove kernel list using declarative rules, never remove running kernel | Must     |
 | FR-06  | Detect pending `autoremove` / `autoclean` actions and execute when beneficial | Must     |
 | FR-07  | Implement ≥5 distinct security checks as separate Prolog predicates/rules; classify severity | Must     |
