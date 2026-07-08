@@ -1,7 +1,7 @@
 # Debian Maintenance Prolog 
 
 This project started as a lesson plan created by Grok to teach me Prolog. I've always wanted to come up with a use for Prolog since I learned it a few decades ago. I finally thought up a use and via SWI-Prolog and Python3 I could implement it. I implemented about 80% of this code by hand and via AI autocomplete. The rest was 
-mostly skeletons of modules created by Grop so that I would know the general structure.
+mostly skeletons of modules created by Grok so that I would know the general structure.
 
 This is implemented as a Prolog "conductor" with Python being the "hands" running SSH commands into the target. That's actually backwards, I think, of how it should be. Python should be the "conductor" providing facts to Prolog to make decisions. However, I did it this way because the point was to learn Prolog, not Python, so I wanted to do the maximum amount of Prolog coding.
 
